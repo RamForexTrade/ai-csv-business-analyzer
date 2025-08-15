@@ -1,6 +1,6 @@
 """
-Basic Web Scraping Module for Business Contact Research
-Simplified version with only basic functionality
+Enhanced Web Scraping Module for Business Contact Research
+Railway-compatible version with improved error handling
 """
 
 import streamlit as st
@@ -14,8 +14,29 @@ import importlib
 import dotenv
 from dotenv import load_dotenv
 
+def get_env_var(key, default=None):
+    """Get environment variable from Railway environment or .env file"""
+    # First try regular environment variables (Railway uses these)
+    value = os.getenv(key)
+    if value:
+        return value
+
+    # Then try Streamlit secrets (for Streamlit Cloud deployment)
+    try:
+        if hasattr(st, 'secrets') and key in st.secrets:
+            return st.secrets[key]
+    except Exception:
+        pass
+
+    # Finally try .env file (local development)
+    try:
+        load_dotenv()
+        return os.getenv(key, default)
+    except Exception:
+        return default
+
 def perform_web_scraping(filtered_df):
-    """Basic web scraping of business contact information from filtered data"""
+    """Enhanced web scraping of business contact information from filtered data"""
     
     # Check if DataFrame is empty
     if len(filtered_df) == 0:
@@ -96,24 +117,45 @@ def perform_web_scraping(filtered_df):
     # API Configuration check
     st.write("🔧 **API Configuration:**")
 
-    # Force reload environment variables
-    importlib.reload(dotenv)
-    load_dotenv(override=True)
+    # Get API keys using Railway-compatible method
+    groq_key = get_env_var('GROQ_API_KEY')
+    tavily_key = get_env_var('TAVILY_API_KEY')
 
-    groq_key = os.getenv('GROQ_API_KEY')
-    tavily_key = os.getenv('TAVILY_API_KEY')
+    # Debug information for Railway
+    st.write("🔍 **Debug Info:**")
+    debug_col1, debug_col2 = st.columns(2)
+    
+    with debug_col1:
+        groq_status = "Found" if groq_key else "Missing"
+        st.write(f"Groq Key: {groq_status}")
+        if groq_key:
+            st.write(f"Length: {len(groq_key)}")
+            st.write(f"Starts with: {groq_key[:10]}...")
+    
+    with debug_col2:
+        tavily_status = "Found" if tavily_key else "Missing" 
+        st.write(f"Tavily Key: {tavily_status}")
+        if tavily_key:
+            st.write(f"Length: {len(tavily_key)}")
+            st.write(f"Starts with: {tavily_key[:10]}...")
 
-    # Key validation
+    # Key validation - More flexible for Railway
     def is_valid_key(key, key_type):
         if not key or key.strip() == '':
             return False, "Key is empty or missing"
-        if key.strip() in ['your_groq_key_here', 'your_tavily_key_here', 'gsk_...', 'tvly-...']:
+        if key.strip() in ['your_groq_key_here', 'your_tavily_key_here']:
             return False, "Key is a placeholder value"
-        if key_type == 'groq' and not key.startswith('gsk_'):
-            return False, "Groq key should start with 'gsk_'"
-        if key_type == 'tavily' and not key.startswith('tvly-'):
-            return False, "Tavily key should start with 'tvly-'"
-        return True, "Key format is valid"
+        if len(key.strip()) < 10:
+            return False, "Key appears too short"
+        # More flexible validation for Railway environment
+        if key_type == 'groq' and len(key) > 20:  # Basic length check instead of prefix
+            return True, "Key format is valid"
+        if key_type == 'tavily' and len(key) > 20:  # Basic length check instead of prefix
+            return True, "Key format is valid"
+        # Fallback - if key exists and is reasonable length, accept it
+        if len(key) > 15:
+            return True, "Key format appears valid"
+        return False, "Key format validation failed"
 
     groq_valid, groq_reason = is_valid_key(groq_key, 'groq')
     tavily_valid, tavily_reason = is_valid_key(tavily_key, 'tavily')
@@ -128,7 +170,7 @@ def perform_web_scraping(filtered_df):
             st.caption(f"Key: {masked_key}")
         else:
             st.error(f"❌ Groq API Key: {groq_reason}")
-            st.caption("Add GROQ_API_KEY to .env file")
+            st.caption("Add GROQ_API_KEY to Railway environment variables")
 
     with col_api2:
         if tavily_valid:
@@ -137,24 +179,26 @@ def perform_web_scraping(filtered_df):
             st.caption(f"Key: {masked_key}")
         else:
             st.error(f"❌ Tavily API Key: {tavily_reason}")
-            st.caption("Add TAVILY_API_KEY to .env file")
+            st.caption("Add TAVILY_API_KEY to Railway environment variables")
 
     # Show setup instructions if keys are invalid
     if not groq_valid or not tavily_valid:
-        st.warning("⚠️ **Setup Required**: Please configure both API keys before starting research.")
+        st.warning("⚠️ **Setup Required**: Please configure both API keys in Railway environment variables.")
 
-        with st.expander("📝 Setup Instructions", expanded=False):
+        with st.expander("📝 Railway Setup Instructions", expanded=False):
             st.markdown("""
-            **To set up API keys:**
+            **To set up API keys in Railway:**
 
-            1. **Edit your .env file** in the app directory
-            2. **Add your API keys:**
+            1. **Go to your Railway project dashboard**
+            2. **Click on your service**
+            3. **Go to Variables tab**
+            4. **Add these environment variables:**
                ```
-               GROQ_API_KEY=gsk_your_actual_groq_key_here
-               TAVILY_API_KEY=tvly-your_actual_tavily_key_here
+               GROQ_API_KEY = your_actual_groq_key_here
+               TAVILY_API_KEY = your_actual_tavily_key_here
                ```
-            3. **Restart the app**
-            4. **Get API keys from:**
+            5. **Redeploy your service**
+            6. **Get API keys from:**
                - [Groq API Keys](https://console.groq.com/keys)
                - [Tavily API](https://tavily.com)
             """)
@@ -164,10 +208,10 @@ def perform_web_scraping(filtered_df):
     st.markdown("---")
 
     button_disabled = not both_apis_configured
-    button_help = f"Research {max_businesses} businesses using basic web scraping" if both_apis_configured else "Configure both API keys first"
+    button_help = f"Research {max_businesses} businesses using enhanced web scraping" if both_apis_configured else "Configure both API keys first"
 
     if st.button(
-        f"🚀 Start Basic Research ({max_businesses} businesses)",
+        f"🚀 Start Enhanced Research ({max_businesses} businesses)",
         type="primary",
         disabled=button_disabled,
         help=button_help,
@@ -178,107 +222,170 @@ def perform_web_scraping(filtered_df):
             st.error("❌ Cannot start research: API keys not properly configured")
             return
 
-        st.info("🔄 Starting basic business research...")
+        st.info("🔄 Starting enhanced business research...")
 
         try:
-            # Import the basic business researcher
-            modules_path = os.path.dirname(__file__)
-            if modules_path not in sys.path:
-                sys.path.insert(0, modules_path)
-                
-            from streamlit_business_researcher import research_businesses_from_dataframe
+            # Import the enhanced business researcher with better error handling
+            try:
+                from modules.streamlit_business_researcher import research_businesses_from_dataframe
+                st.success("✅ Successfully imported research module")
+            except ImportError as e:
+                st.error(f"❌ Failed to import research module: {e}")
+                # Try alternative import
+                try:
+                    import sys
+                    current_dir = os.path.dirname(os.path.abspath(__file__))
+                    sys.path.insert(0, current_dir)
+                    from streamlit_business_researcher import research_businesses_from_dataframe
+                    st.success("✅ Successfully imported research module (alternative method)")
+                except Exception as e2:
+                    st.error(f"❌ Failed alternative import: {e2}")
+                    return
 
             # Create progress indicators
             progress_bar = st.progress(0)
             status_text = st.empty()
 
-            status_text.info("🚀 Initializing research system...")
+            status_text.info("🚀 Initializing enhanced research system...")
             progress_bar.progress(10)
 
-            with st.spinner("Researching businesses using basic web scraping..."):
+            # Get unique business names and slice properly
+            unique_businesses_list = filtered_df[selected_column].dropna().unique()
+            start_idx = range_from - 1
+            end_idx = range_to
+            businesses_to_research = unique_businesses_list[start_idx:end_idx]
+            research_df = filtered_df[filtered_df[selected_column].isin(businesses_to_research)]
 
-                # Get unique business names and slice properly
-                unique_businesses_list = filtered_df[selected_column].dropna().unique()
-                start_idx = range_from - 1
-                end_idx = range_to
-                businesses_to_research = unique_businesses_list[start_idx:end_idx]
-                research_df = filtered_df[filtered_df[selected_column].isin(businesses_to_research)]
+            st.info(f"🎯 **Researching businesses {range_from} to {range_to}:**")
+            for i, business in enumerate(businesses_to_research, start=range_from):
+                st.write(f"   {i}. {business}")
 
-                st.info(f"🎯 **Researching businesses {range_from} to {range_to}:**")
-                for i, business in enumerate(businesses_to_research, start=range_from):
-                    st.write(f"   {i}. {business}")
+            status_text.info("🔍 Starting enhanced business research process...")
+            progress_bar.progress(20)
 
-                # Run the async research function
-                async def run_research():
+            # Run the async research function with better error handling
+            async def run_research():
+                try:
                     return await research_businesses_from_dataframe(
                         df=research_df,
                         consignee_column=selected_column,
                         max_businesses=len(businesses_to_research),
-                        enable_justdial=False  # Disable enhanced features
+                        enable_justdial=False
                     )
-
-                status_text.info("🔍 Starting business research process...")
-                progress_bar.progress(20)
-
-                try:
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-
-                    status_text.info("🌐 Connecting to research APIs...")
-                    progress_bar.progress(30)
-
-                    results_df, summary, csv_filename = loop.run_until_complete(run_research())
-                    loop.close()
-
-                    progress_bar.progress(90)
-                    status_text.info("✅ Research completed successfully!")
-
                 except Exception as e:
-                    st.error(f"❌ Research Error: {str(e)}")
-                    return
+                    st.error(f"❌ Research function error: {e}")
+                    raise
 
-                progress_bar.progress(100)
-                status_text.success("✅ Research completed!")
+            status_text.info("🌐 Connecting to research APIs...")
+            progress_bar.progress(30)
 
-                # Check if we got valid results
-                if results_df is not None and not results_df.empty:
-                    # Display summary
-                    st.success(f"🎉 **Basic Research Summary:**")
-                    col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
+            try:
+                # Check if there's already an event loop running (common in deployed environments)
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # If loop is already running, use asyncio.create_task (for Streamlit Cloud/Railway)
+                        import concurrent.futures
+                        with concurrent.futures.ThreadPoolExecutor() as executor:
+                            future = executor.submit(asyncio.run, run_research())
+                            results_df, summary, csv_filename = future.result(timeout=300)  # 5 minute timeout
+                    else:
+                        results_df, summary, csv_filename = loop.run_until_complete(run_research())
+                except RuntimeError:
+                    # No event loop, create new one
+                    results_df, summary, csv_filename = asyncio.run(run_research())
 
-                    with col_sum1:
-                        st.metric("Total Processed", summary['total_processed'])
-                    with col_sum2:
-                        st.metric("Successful", summary['successful'])
-                    with col_sum3:
-                        st.metric("Manual Required", summary['manual_required'])
-                    with col_sum4:
-                        st.metric("Success Rate", f"{summary['success_rate']:.1f}%")
+                progress_bar.progress(90)
+                status_text.info("✅ Research completed successfully!")
 
-                    # Display results table
-                    st.subheader("📈 Research Results")
-                    st.dataframe(results_df, use_container_width=True, height=400)
+            except Exception as e:
+                st.error(f"❌ Research execution error: {str(e)}")
+                st.error("This might be due to API connectivity issues or environment configuration.")
+                
+                # Additional debugging info
+                st.write("**Debug Information:**")
+                st.write(f"- Groq Key Present: {bool(groq_key)}")
+                st.write(f"- Tavily Key Present: {bool(tavily_key)}")
+                st.write(f"- Python Version: {sys.version}")
+                st.write(f"- Current Working Directory: {os.getcwd()}")
+                st.write(f"- Module Path: {os.path.dirname(__file__)}")
+                return
 
-                    # Download results
-                    st.subheader("📅 Download Research Results")
-                    csv_data = results_df.to_csv(index=False)
+            progress_bar.progress(100)
+            status_text.success("✅ Enhanced research completed!")
 
-                    st.download_button(
-                        label="📄 Download Research Results CSV",
-                        data=csv_data,
-                        file_name=f"basic_business_research_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                        mime="text/csv"
-                    )
+            # Check if we got valid results
+            if results_df is not None and not results_df.empty:
+                # Display enhanced summary
+                st.success(f"🎉 **Enhanced Research Summary:**")
+                col_sum1, col_sum2, col_sum3, col_sum4, col_sum5 = st.columns(5)
 
-                    # Success message
-                    st.balloons()
-                    st.success(f"🎉 Successfully researched {summary['successful']} businesses!")
+                with col_sum1:
+                    st.metric("Total Processed", summary['total_processed'])
+                with col_sum2:
+                    st.metric("Successful", summary['successful'])
+                with col_sum3:
+                    st.metric("Manual Required", summary['manual_required'])
+                with col_sum4:
+                    st.metric("Success Rate", f"{summary['success_rate']:.1f}%")
+                with col_sum5:
+                    if 'government_verified' in summary:
+                        st.metric("Govt Verified", summary.get('government_verified', 0))
+                    else:
+                        st.metric("Govt Verification", f"{summary.get('government_verification_rate', 0):.1f}%")
 
-                    if summary['manual_required'] > 0:
-                        st.info(f"🔍 {summary['manual_required']} businesses require manual research")
+                # Display results table
+                st.subheader("📈 Enhanced Research Results")
+                
+                # Show column information
+                st.write("**Available Columns:**")
+                cols_info = []
+                for col in results_df.columns:
+                    non_empty = results_df[col].notna().sum()
+                    cols_info.append(f"{col} ({non_empty} filled)")
+                st.write(" | ".join(cols_info))
+                
+                st.dataframe(results_df, use_container_width=True, height=400)
 
-                else:
-                    st.warning("⚠️ Research completed but no results were found.")
+                # Download results
+                st.subheader("📅 Download Enhanced Research Results")
+                csv_data = results_df.to_csv(index=False)
+
+                st.download_button(
+                    label="📄 Download Enhanced Research Results CSV",
+                    data=csv_data,
+                    file_name=f"enhanced_business_research_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+
+                # Success message
+                st.balloons()
+                st.success(f"🎉 Successfully researched {summary['successful']} businesses with enhanced sources!")
+
+                if summary['manual_required'] > 0:
+                    st.info(f"🔍 {summary['manual_required']} businesses require manual research")
+
+                # Show government verification stats if available
+                if 'government_verification_rate' in summary and summary['government_verification_rate'] > 0:
+                    st.success(f"🏛️ {summary['government_verification_rate']:.1f}% of businesses were verified through government sources!")
+
+            else:
+                st.warning("⚠️ Research completed but no results were found.")
+                st.info("This could be due to:")
+                st.write("- API connectivity issues")
+                st.write("- No relevant businesses found for the wood/timber industry")
+                st.write("- Location mismatch with expected addresses")
 
         except Exception as e:
-            st.error(f"❌ Error: {str(e)}")
+            st.error(f"❌ System Error: {str(e)}")
+            st.error("Please check the Railway logs for more detailed error information.")
+            
+            # Show additional debugging information
+            with st.expander("🔍 Technical Details", expanded=False):
+                st.write("**Error Details:**")
+                st.code(str(e))
+                st.write("**Environment Info:**")
+                st.write(f"- Platform: {os.name}")
+                st.write(f"- Python: {sys.version}")
+                st.write(f"- Working Dir: {os.getcwd()}")
+                st.write(f"- Available Modules: {list(sys.modules.keys())[:10]}...")
