@@ -1,7 +1,8 @@
 """
-Enhanced Streamlit Business Researcher with Government Sources
+Enhanced Streamlit Business Researcher with Government Sources and Email Integration
 Includes specific searches for government business databases and official registrations
 Focused on teak, wood, timber, lumber businesses with city/address verification
+Integrated with Business Email Module for curated outreach
 """
 
 import asyncio
@@ -14,6 +15,7 @@ import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from tavily import TavilyClient
+from modules.business_emailer import BusinessEmailer, get_email_provider_config
 
 # Load environment variables
 load_dotenv()
@@ -33,7 +35,157 @@ class StreamlitBusinessResearcher:
         # Initialize Tavily client
         self.tavily_client = TavilyClient(api_key=self.tavily_key)
         
+        # Initialize email module
+        self.emailer = BusinessEmailer()
+        
         self.results = []
+    
+    def configure_email(self, email_provider='gmail', email_address=None, email_password=None, sender_name=None):
+        """Configure email settings for sending curated emails"""
+        try:
+            if not email_address or not email_password:
+                return False, "Email address and password are required"
+            
+            provider_config = get_email_provider_config(email_provider)
+            if not provider_config:
+                return False, f"Email provider '{email_provider}' not supported"
+            
+            # Configure SMTP settings
+            self.emailer.configure_smtp(
+                smtp_server=provider_config['smtp_server'],
+                port=provider_config['port'],
+                email=email_address,
+                password=email_password,
+                sender_name=sender_name or email_address
+            )
+            
+            # Test the configuration
+            test_success, test_message = self.emailer.test_email_config()
+            
+            if test_success:
+                return True, f"Email configured successfully with {email_provider.title()}"
+            else:
+                return False, f"Email configuration failed: {test_message}"
+                
+        except Exception as e:
+            return False, f"Email configuration error: {str(e)}"
+    
+    def get_businesses_with_emails(self):
+        """Get list of businesses that have email addresses from research results"""
+        if not self.results:
+            return pd.DataFrame()
+        
+        # Convert results to DataFrame
+        results_df = self.get_results_dataframe()
+        
+        # Filter businesses with valid email addresses
+        businesses_with_emails = results_df[
+            (results_df['email'].notna()) & 
+            (results_df['email'] != '') & 
+            (results_df['email'] != 'Not found') &
+            (results_df['email'] != 'Research required') &
+            (results_df['email'] != 'API billing error') &
+            (~results_df['email'].str.contains('not relevant', case=False, na=False))
+        ].copy()
+        
+        return businesses_with_emails
+    
+    def get_email_templates(self):
+        """Get available email templates"""
+        return self.emailer.get_default_templates()
+    
+    async def send_curated_emails(self, selected_businesses=None, template_name='business_intro', 
+                                email_variables=None, delay_seconds=2.0, 
+                                progress_callback=None, status_callback=None):
+        """Send curated emails to selected businesses or all businesses with email addresses"""
+        
+        try:
+            # Get businesses with emails
+            if selected_businesses is not None:
+                # Use provided business list
+                businesses_to_email = selected_businesses
+            else:
+                # Use all businesses with email addresses
+                businesses_to_email = self.get_businesses_with_emails()
+            
+            if len(businesses_to_email) == 0:
+                return {
+                    'success': False,
+                    'message': 'No businesses with email addresses found',
+                    'summary': {
+                        'total_businesses': 0,
+                        'emails_to_send': 0,
+                        'emails_sent': 0,
+                        'emails_failed': 0,
+                        'success_rate': 0
+                    }
+                }
+            
+            # Prepare default email variables if not provided
+            if not email_variables:
+                email_variables = {
+                    'your_company_name': 'Your Company Name',
+                    'sender_name': 'Your Name',
+                    'your_phone': 'Your Phone Number',
+                    'your_email': 'your.email@example.com',
+                    'product_requirements': 'High-quality timber and wood products',
+                    'volume_requirements': 'To be discussed',
+                    'timeline_requirements': 'Flexible',
+                    'quality_requirements': 'Premium grade'
+                }
+            
+            # Load email templates if not already loaded
+            templates = self.emailer.get_default_templates()
+            
+            # Send bulk emails
+            summary = await self.emailer.send_bulk_emails(
+                businesses_df=businesses_to_email,
+                template_name=template_name,
+                base_variables=email_variables,
+                delay_seconds=delay_seconds,
+                progress_callback=progress_callback,
+                status_callback=status_callback
+            )
+            
+            return {
+                'success': True,
+                'message': f'Email campaign completed. Sent {summary["emails_sent"]} emails.',
+                'summary': summary,
+                'email_log': self.emailer.get_email_log()
+            }
+            
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'Email campaign failed: {str(e)}',
+                'summary': {
+                    'total_businesses': 0,
+                    'emails_to_send': 0,
+                    'emails_sent': 0,
+                    'emails_failed': 0,
+                    'success_rate': 0
+                }
+            }
+    
+    def save_email_log(self, filename=None):
+        """Save email sending log"""
+        if not filename:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            filename = f"business_email_log_{timestamp}.json"
+        
+        return self.emailer.save_email_log(filename)
+    
+    def get_email_statistics(self):
+        """Get email sending statistics"""
+        log = self.emailer.get_email_log()
+        
+        return {
+            'total_sent': log['total_sent'],
+            'total_failed': log['total_failed'],
+            'success_rate': (log['total_sent'] / (log['total_sent'] + log['total_failed']) * 100) if (log['total_sent'] + log['total_failed']) > 0 else 0,
+            'recent_sent': log['sent_emails'][-5:] if log['sent_emails'] else [],
+            'recent_failed': log['failed_emails'][-5:] if log['failed_emails'] else []
+        }
     
     def test_apis(self):
         """Test all APIs before starting research"""
@@ -860,8 +1012,73 @@ async def research_businesses_from_dataframe(df, consignee_column='Consignee Nam
         # Save to CSV with enhanced format
         csv_filename, results_df = researcher.save_csv_results(filter_info=filter_info)
         
-        return results_df, summary, csv_filename
+        return results_df, summary, csv_filename, researcher
         
     except Exception as e:
         print(f"❌ Error: {e}")
-        return None, None, None
+        return None, None, None, None
+
+# Email integration functions for Streamlit interface
+async def send_curated_business_emails(researcher, selected_businesses=None, email_config=None, template_name='business_intro', email_variables=None, delay_seconds=2.0, progress_callback=None, status_callback=None):
+    """
+    Send curated emails to businesses with email addresses
+    
+    Args:
+        researcher: StreamlitBusinessResearcher instance
+        selected_businesses: DataFrame of selected businesses (if None, uses all with emails)
+        email_config: Dictionary with email configuration
+        template_name: Email template to use
+        email_variables: Variables to populate in email template
+        delay_seconds: Delay between emails to avoid rate limiting
+        progress_callback: Function to call for progress updates
+        status_callback: Function to call for status updates
+    
+    Returns:
+        dict: Email campaign results
+    """
+    
+    try:
+        # Configure email if provided
+        if email_config:
+            success, message = researcher.configure_email(
+                email_provider=email_config.get('provider', 'gmail'),
+                email_address=email_config.get('email'),
+                email_password=email_config.get('password'),
+                sender_name=email_config.get('sender_name')
+            )
+            
+            if not success:
+                return {
+                    'success': False,
+                    'message': f"Email configuration failed: {message}",
+                    'summary': {
+                        'total_businesses': 0,
+                        'emails_to_send': 0,
+                        'emails_sent': 0,
+                        'emails_failed': 0,
+                        'success_rate': 0
+                    }
+                }
+        
+        # Send emails
+        return await researcher.send_curated_emails(
+            selected_businesses=selected_businesses,
+            template_name=template_name,
+            email_variables=email_variables,
+            delay_seconds=delay_seconds,
+            progress_callback=progress_callback,
+            status_callback=status_callback
+        )
+        
+    except Exception as e:
+        return {
+            'success': False,
+            'message': f"Email sending failed: {str(e)}",
+            'summary': {
+                'total_businesses': 0,
+                'emails_to_send': 0,
+                'emails_sent': 0,
+                'emails_failed': 0,
+                'success_rate': 0
+            }
+        }
