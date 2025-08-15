@@ -1,5 +1,5 @@
 """
-Enhanced Web Scraping Module with Real-time Progress Updates
+Enhanced Web Scraping Module with Real-time Progress Updates and Email Integration
 Railway-compatible version with aggressive UI refreshing
 """
 
@@ -147,7 +147,7 @@ class ProgressTracker:
         self.debug_container.success(f"✅ Completed in {total_time:.1f} seconds")
 
 def perform_web_scraping(filtered_df):
-    """Enhanced web scraping with real-time progress updates"""
+    """Enhanced web scraping with real-time progress updates and email integration"""
     
     # Check if DataFrame is empty
     if len(filtered_df) == 0:
@@ -491,7 +491,21 @@ def perform_web_scraping(filtered_df):
                     mime="text/csv"
                 )
 
+                # Store research results and researcher instance in session state for email functionality
+                st.session_state.research_completed = True
+                st.session_state.researcher_instance = researcher
+                st.session_state.research_results = results_df
+                st.session_state.research_summary = summary
+
                 st.balloons()
+                
+                # Show success message with email information
+                businesses_with_emails = researcher.get_businesses_with_emails()
+                if len(businesses_with_emails) > 0:
+                    st.success(f"🎉 Research completed! Found email addresses for {len(businesses_with_emails)} businesses. Email sending options are now available below.")
+                else:
+                    st.info("ℹ️ Research completed! No email addresses were found in the results.")
+                
             else:
                 st.warning("⚠️ Research completed but no results were found.")
 
