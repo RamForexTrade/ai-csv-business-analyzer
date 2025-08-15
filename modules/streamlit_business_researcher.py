@@ -2,7 +2,7 @@
 Enhanced Streamlit Business Researcher with Government Sources
 Includes specific searches for government business databases and official registrations
 Focused on teak, wood, timber, lumber businesses with city/address verification
-Fixed UI Progress Issues for Railway Deployment
+Simplified Progress with Spinner - Railway Compatible
 """
 
 import asyncio
@@ -15,7 +15,6 @@ import requests
 from datetime import datetime
 from dotenv import load_dotenv
 from tavily import TavilyClient
-import streamlit as st
 import time
 
 # Load environment variables
@@ -38,49 +37,33 @@ class StreamlitBusinessResearcher:
         
         self.results = []
         
-        # UI Update Callbacks
+        # Simple callbacks
         self.progress_callback = progress_callback
         self.status_callback = status_callback
         
-        # Timeout settings
-        self.api_timeout = 30
-        self.total_timeout = 120  # 2 minutes per business max
+        # Relaxed timeout settings
+        self.api_timeout = 60
+        self.search_timeout = 45
         
-    def update_progress(self, current, total, message=""):
-        """Update progress with UI callback"""
+    def simple_update(self, current, total, business_name=""):
+        """Simple progress update without detailed messages"""
         try:
             if self.progress_callback:
                 progress_value = current / total if total > 0 else 0
                 self.progress_callback(progress_value)
             
             if self.status_callback:
-                status_msg = f"Progress: {current}/{total} - {message}"
-                self.status_callback(status_msg)
-            
-            # Force UI update for Streamlit
-            if 'streamlit' in globals():
-                time.sleep(0.1)  # Allow UI to update
+                if business_name:
+                    self.status_callback(f"🔍 Researching {current}/{total}: {business_name}")
+                else:
+                    self.status_callback(f"🔄 Processing {current}/{total}")
                 
-        except Exception as e:
-            print(f"Progress update error: {e}")
-    
-    def update_status(self, message):
-        """Update status message"""
-        try:
-            if self.status_callback:
-                self.status_callback(message)
-            print(f"🔄 {message}")
-            
-            # Force UI refresh
-            if 'streamlit' in globals():
-                time.sleep(0.05)
-                
-        except Exception as e:
-            print(f"Status update error: {e}")
+        except Exception:
+            pass  # Ignore update errors
     
     def test_apis(self):
         """Test all APIs before starting research"""
-        self.update_status("🧪 Testing APIs...")
+        print("🧪 Testing APIs...")
         
         # Test Groq
         try:
@@ -96,36 +79,36 @@ class StreamlitBusinessResearcher:
                     "max_tokens": 10,
                     "temperature": 0.1
                 },
-                timeout=self.api_timeout
+                timeout=30
             )
             
             if response.status_code == 200:
                 result = response.json()
                 if result.get('choices') and result['choices'][0].get('message', {}).get('content'):
-                    self.update_status("✅ Groq API: Working")
+                    print("✅ Groq API: Working")
                 else:
                     return False, "Groq API: Empty response"
             else:
                 error_msg = f"Groq API: HTTP {response.status_code} - {response.text}"
-                self.update_status(f"❌ {error_msg}")
+                print(f"❌ {error_msg}")
                 return False, error_msg
                 
         except Exception as e:
             error_str = str(e).lower()
             if "billing" in error_str or "quota" in error_str or "insufficient" in error_str:
                 error_msg = f"Groq API: Billing/Quota Issue - {e}"
-                self.update_status(f"💳 {error_msg}")
+                print(f"💳 {error_msg}")
                 return False, error_msg
             else:
                 error_msg = f"Groq API: {e}"
-                self.update_status(f"❌ {error_msg}")
+                print(f"❌ {error_msg}")
                 return False, error_msg
         
         # Test Tavily
         try:
             response = self.tavily_client.search("test query", max_results=1)
             if response.get('results'):
-                self.update_status("✅ Tavily API: Working")
+                print("✅ Tavily API: Working")
             else:
                 return False, "Tavily API: No results"
                 
@@ -133,176 +116,58 @@ class StreamlitBusinessResearcher:
             error_str = str(e).lower()
             if "billing" in error_str or "quota" in error_str or "insufficient" in error_str or "limit" in error_str:
                 error_msg = f"Tavily API: Billing/Quota Issue - {e}"
-                self.update_status(f"💳 {error_msg}")
+                print(f"💳 {error_msg}")
                 return False, error_msg
             else:
                 error_msg = f"Tavily API: {e}"
-                self.update_status(f"❌ {error_msg}")
+                print(f"❌ {error_msg}")
                 return False, error_msg
         
         return True, "All APIs working"
     
     async def research_business_direct(self, business_name, expected_city=None, expected_address=None):
-        """Research business using comprehensive multi-layer strategy with timeout management"""
+        """Research business using comprehensive multi-layer strategy"""
         
-        start_time = time.time()
-        self.update_status(f"🔍 Researching: {business_name}")
+        print(f"🔍 Researching: {business_name}")
         
         try:
-            # Multi-layer enhanced search strategy with timeout
+            # Multi-layer enhanced search strategy
             all_search_results = []
             
             # Layer 1: General wood/timber business information
-            self.update_status("📊 Layer 1: General business search...")
-            if time.time() - start_time > self.total_timeout:
-                raise asyncio.TimeoutError("Total timeout exceeded")
-            
-            general_results = await asyncio.wait_for(
-                self.async_search_general_business_info(business_name), 
-                timeout=30
-            )
+            print("   📊 Layer 1: General business search...")
+            general_results = self.search_general_business_info(business_name)
             all_search_results.extend(general_results)
             
             # Layer 2: Government and official sources
-            self.update_status("🏛️ Layer 2: Government sources search...")
-            if time.time() - start_time > self.total_timeout:
-                raise asyncio.TimeoutError("Total timeout exceeded")
-                
-            government_results = await asyncio.wait_for(
-                self.async_search_government_sources(business_name), 
-                timeout=30
-            )
+            print("   🏛️ Layer 2: Government sources search...")
+            government_results = self.search_government_sources(business_name)
             all_search_results.extend(government_results)
             
             # Layer 3: Industry-specific sources
-            self.update_status("🌲 Layer 3: Timber industry sources...")
-            if time.time() - start_time > self.total_timeout:
-                raise asyncio.TimeoutError("Total timeout exceeded")
-                
-            industry_results = await asyncio.wait_for(
-                self.async_search_industry_sources(business_name), 
-                timeout=30
-            )
+            print("   🌲 Layer 3: Timber industry sources...")
+            industry_results = self.search_industry_sources(business_name)
             all_search_results.extend(industry_results)
             
             if not all_search_results:
-                self.update_status(f"❌ No search results found for {business_name}")
+                print(f"❌ No search results found for {business_name}")
                 return self.create_manual_fallback(business_name)
             
-            # Step 2: Extract contact info using Groq AI with timeout
-            self.update_status("🦙 Analyzing results with Groq AI...")
-            if time.time() - start_time > self.total_timeout:
-                raise asyncio.TimeoutError("Total timeout exceeded")
-                
-            contact_info = await asyncio.wait_for(
-                self.extract_contacts_with_groq(
-                    business_name, all_search_results, expected_city, expected_address
-                ), 
-                timeout=40
+            # Step 2: Extract contact info using Groq AI with comprehensive data and relevance verification
+            contact_info = await self.extract_contacts_with_groq(
+                business_name, all_search_results, expected_city, expected_address
             )
             
             return contact_info
             
-        except asyncio.TimeoutError:
-            self.update_status(f"⏱️ Timeout occurred for {business_name}")
-            return self.create_timeout_result(business_name)
         except Exception as e:
             error_str = str(e).lower()
             if "billing" in error_str or "quota" in error_str or "insufficient" in error_str:
-                self.update_status(f"💳 API Billing Error for {business_name}: {e}")
+                print(f"💳 API Billing Error for {business_name}: {e}")
                 return self.create_billing_error_result(business_name)
             else:
-                self.update_status(f"❌ Error researching {business_name}: {e}")
+                print(f"❌ Error researching {business_name}: {e}")
                 return self.create_manual_fallback(business_name)
-    
-    async def async_search_general_business_info(self, business_name):
-        """Async version of general business search"""
-        search_queries = [
-            f"{business_name} wood timber teak contact information phone email",
-            f"{business_name} lumber plywood business address website",
-            f"{business_name} timber trading company official contact",
-            f"{business_name} wood export import contact details"
-        ]
-        
-        return await self.async_execute_search_queries(search_queries, "General")
-    
-    async def async_search_government_sources(self, business_name):
-        """Async version of government sources search"""
-        government_queries = [
-            f'"{business_name}" site:gov.in business registration timber',
-            f'"{business_name}" site:nic.in company details wood',
-            f'"{business_name}" ministry commerce industry registration timber',
-            f'"{business_name}" GST registration number lumber',
-            f'"{business_name}" ROC registrar companies wood',
-            f'"{business_name}" forest department license timber',
-            f'"{business_name}" pollution control board clearance wood',
-            f'"{business_name}" shop establishment license timber',
-            f'"{business_name}" trade license municipal corporation wood',
-            f'"{business_name}" forest produce trading license',
-            f'"{business_name}" environmental clearance wood industry',
-            f'"{business_name}" state forest corporation timber dealer'
-        ]
-        
-        return await self.async_execute_search_queries(government_queries, "Government")
-    
-    async def async_search_industry_sources(self, business_name):
-        """Async version of industry sources search"""
-        industry_queries = [
-            f'"{business_name}" timber traders association member',
-            f'"{business_name}" wood importers exporters directory',
-            f'"{business_name}" forest produce trading license',
-            f'"{business_name}" timber merchants federation',
-            f'"{business_name}" wood industry chamber commerce',
-            f'"{business_name}" lumber dealers association',
-            f'"{business_name}" plywood manufacturers association',
-            f'"{business_name}" teak wood suppliers directory',
-            f'"{business_name}" timber industry federation member',
-            f'"{business_name}" wood products manufacturers association',
-            f'"{business_name}" forest based industries directory',
-            f'"{business_name}" timber trade association registry'
-        ]
-        
-        return await self.async_execute_search_queries(industry_queries, "Industry")
-    
-    async def async_execute_search_queries(self, queries, search_type):
-        """Async version of search query execution with progress updates"""
-        all_results = []
-        
-        for i, query in enumerate(queries):
-            try:
-                self.update_status(f"📝 {search_type}: Query {i+1}/{len(queries)}")
-                
-                # Search with Tavily using preferred domains
-                response = await asyncio.wait_for(
-                    asyncio.to_thread(
-                        self.tavily_client.search,
-                        query=query,
-                        max_results=2,
-                        search_depth="advanced",
-                        include_domains=self.get_preferred_domains(search_type),
-                        exclude_domains=["facebook.com", "twitter.com", "instagram.com", "linkedin.com"]
-                    ),
-                    timeout=self.api_timeout
-                )
-                
-                if response.get('results'):
-                    # Tag results with search type
-                    for result in response['results']:
-                        result['search_type'] = search_type
-                    all_results.extend(response['results'])
-                    self.update_status(f"✅ Found {len(response['results'])} results")
-                else:
-                    self.update_status(f"❌ No results for query {i+1}")
-                
-                # Small delay to allow UI updates
-                await asyncio.sleep(0.1)
-                    
-            except Exception as e:
-                self.update_status(f"⚠️ Query {i+1} error: {str(e)[:50]}")
-                await asyncio.sleep(0.1)
-                
-        self.update_status(f"📊 {search_type} total: {len(all_results)} results")
-        return all_results
     
     def search_general_business_info(self, business_name):
         """Search for general wood/timber business information"""
@@ -364,8 +229,6 @@ class StreamlitBusinessResearcher:
         
         for query in queries:
             try:
-                self.update_status(f"📝 {search_type}: {query[:60]}...")
-                
                 # Search with Tavily using preferred domains
                 response = self.tavily_client.search(
                     query=query,
@@ -380,14 +243,11 @@ class StreamlitBusinessResearcher:
                     for result in response['results']:
                         result['search_type'] = search_type
                     all_results.extend(response['results'])
-                    self.update_status(f"✅ Found {len(response['results'])} results")
-                else:
-                    self.update_status(f"❌ No results")
                     
             except Exception as e:
-                self.update_status(f"⚠️ Error: {str(e)[:50]}")
+                print(f"         ⚠️ Error: {str(e)[:50]}")
                 
-        self.update_status(f"📊 {search_type} total: {len(all_results)} results")
+        print(f"   📊 {search_type} total: {len(all_results)} results")
         return all_results
     
     def get_preferred_domains(self, search_type):
@@ -448,7 +308,7 @@ class StreamlitBusinessResearcher:
     async def extract_contacts_with_groq(self, business_name, search_results, expected_city=None, expected_address=None):
         """Enhanced Groq extraction with government data analysis and city/address verification"""
         
-        self.update_status(f"🦙 Analyzing {len(search_results)} results with Enhanced Groq...")
+        print(f"   🦙 Analyzing {len(search_results)} results with Enhanced Groq...")
         
         # Categorize results by source type
         categorized_results = self.categorize_search_results(search_results)
@@ -520,23 +380,18 @@ Format your response exactly as shown above with the field names.
         """
         
         try:
-            self.update_status("🔄 Sending data to Groq AI...")
-            
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    requests.post,
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.groq_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "llama-3.3-70b-versatile",
-                        "messages": [{"role": "user", "content": prompt}],
-                        "max_tokens": 1200,
-                        "temperature": 0.1
-                    }
-                ),
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.groq_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1200,
+                    "temperature": 0.1
+                },
                 timeout=self.api_timeout
             )
             
@@ -544,13 +399,13 @@ Format your response exactly as shown above with the field names.
                 result = response.json()
                 if result.get('choices') and result['choices'][0].get('message', {}).get('content'):
                     extracted_info = result['choices'][0]['message']['content']
-                    self.update_status("✅ Enhanced Groq extraction completed")
+                    print(f"   ✅ Enhanced Groq extraction completed")
                     
                     # Check if we need second verification
                     needs_verification = await self.check_if_needs_verification(extracted_info, business_name, results_text, expected_city, expected_address)
                     
                     if needs_verification:
-                        self.update_status("🔍 Running second verification...")
+                        print(f"   🔍 Running second verification...")
                         extracted_info = await self.run_second_verification(extracted_info, business_name, results_text, expected_city, expected_address)
                     
                     result_data = {
@@ -570,24 +425,27 @@ Format your response exactly as shown above with the field names.
                     self.results.append(result_data)
                     
                     # Display results
-                    self.update_status(f"📋 Enhanced Results for {business_name}:")
-                    self.update_status(f"📊 Sources: {govt_sources} govt, {industry_sources} industry, {len(search_results)} total")
+                    print(f"   📋 Enhanced Results for {business_name}:")
+                    print("-" * 60)
+                    print(extracted_info)
+                    print("-" * 60)
+                    print(f"   📊 Sources: {govt_sources} govt, {industry_sources} industry, {len(search_results)} total")
                     
                     return result_data
                 else:
-                    self.update_status("❌ Groq returned empty response")
+                    print(f"   ❌ Groq returned empty response")
                     return self.create_manual_fallback(business_name)
             else:
-                self.update_status(f"❌ Groq API error: HTTP {response.status_code}")
+                print(f"   ❌ Groq API error: HTTP {response.status_code} - {response.text}")
                 return self.create_manual_fallback(business_name)
                 
         except Exception as e:
             error_str = str(e).lower()
             if "billing" in error_str or "quota" in error_str or "insufficient" in error_str:
-                self.update_status(f"💳 Groq Billing Error: {e}")
+                print(f"💳 Groq Billing Error: {e}")
                 raise Exception(f"Groq API billing issue: {e}")
             else:
-                self.update_status(f"❌ Groq extraction error: {e}")
+                print(f"   ❌ Groq extraction error: {e}")
                 return self.create_manual_fallback(business_name)
     
     async def check_if_needs_verification(self, extracted_info, business_name, results_text, expected_city, expected_address):
@@ -648,23 +506,18 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         """
         
         try:
-            self.update_status("🔄 Running second verification...")
-            
-            response = await asyncio.wait_for(
-                asyncio.to_thread(
-                    requests.post,
-                    "https://api.groq.com/openai/v1/chat/completions",
-                    headers={
-                        "Authorization": f"Bearer {self.groq_key}",
-                        "Content-Type": "application/json"
-                    },
-                    json={
-                        "model": "llama-3.3-70b-versatile",
-                        "messages": [{"role": "user", "content": verification_prompt}],
-                        "max_tokens": 1200,
-                        "temperature": 0.1
-                    }
-                ),
+            response = requests.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {self.groq_key}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "llama-3.3-70b-versatile",
+                    "messages": [{"role": "user", "content": verification_prompt}],
+                    "max_tokens": 1200,
+                    "temperature": 0.1
+                },
                 timeout=self.api_timeout
             )
             
@@ -672,17 +525,17 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
                 result = response.json()
                 if result.get('choices') and result['choices'][0].get('message', {}).get('content'):
                     verified_info = result['choices'][0]['message']['content']
-                    self.update_status("✅ Second verification completed")
+                    print(f"   ✅ Second verification completed")
                     return verified_info
                 else:
-                    self.update_status("❌ Second verification failed, using first result")
+                    print(f"   ❌ Second verification failed, using first result")
                     return first_result
             else:
-                self.update_status("❌ Second verification API error, using first result")
+                print(f"   ❌ Second verification API error, using first result")
                 return first_result
                 
         except Exception as e:
-            self.update_status(f"❌ Second verification error: {e}, using first result")
+            print(f"   ❌ Second verification error: {e}, using first result")
             return first_result
     
     def create_manual_fallback(self, business_name):
@@ -742,7 +595,8 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         }
         
         self.results.append(result)
-        self.update_status(f"⚠️ Enhanced manual research required for {business_name}")
+        
+        print(f"   ⚠️  Enhanced manual research required for {business_name}")
         
         return result
     
@@ -784,61 +638,20 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         }
         
         self.results.append(result)
-        self.update_status(f"💳 Billing error occurred for {business_name}")
         
-        return result
-    
-    def create_timeout_result(self, business_name):
-        """Create result for timeout cases"""
-        
-        timeout_info = f"""
-        BUSINESS_NAME: {business_name}
-        INDUSTRY_RELEVANT: UNKNOWN
-        LOCATION_RELEVANT: UNKNOWN
-        PHONE: Timeout occurred
-        EMAIL: Timeout occurred
-        WEBSITE: Timeout occurred  
-        ADDRESS: Timeout occurred
-        CITY: Timeout occurred
-        REGISTRATION_NUMBER: Timeout occurred
-        LICENSE_DETAILS: Timeout occurred
-        DIRECTORS: Timeout occurred
-        DESCRIPTION: Research stopped due to timeout
-        GOVERNMENT_VERIFIED: NO
-        CONFIDENCE: 0
-        RELEVANCE_NOTES: Research was stopped due to timeout
-
-        TIMEOUT OCCURRED:
-        Research was stopped due to timeout limits.
-        Consider reducing the number of businesses or checking network connectivity.
-        """
-        
-        result = {
-            'business_name': business_name,
-            'extracted_info': timeout_info,
-            'raw_search_results': [],
-            'government_sources_found': 0,
-            'industry_sources_found': 0,
-            'total_sources': 0,
-            'research_date': datetime.now().isoformat(),
-            'method': 'Timeout Error',
-            'status': 'timeout_error'
-        }
-        
-        self.results.append(result)
-        self.update_status(f"⏱️ Timeout occurred for {business_name}")
+        print(f"   💳 Billing error occurred for {business_name}")
         
         return result
     
     async def research_from_dataframe(self, df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=None, enable_justdial=False):
-        """Research businesses from DataFrame with enhanced comprehensive search and city/address verification"""
+        """Research businesses from DataFrame with simplified progress tracking"""
         
         # Extract business names from the specified column
         if consignee_column not in df.columns:
             available_cols = [col for col in df.columns if 'consignee' in col.lower() or 'name' in col.lower()]
             if available_cols:
                 consignee_column = available_cols[0]
-                self.update_status(f"⚠️ Column '{consignee_column}' not found. Using '{consignee_column}' instead.")
+                print(f"⚠️  Column '{consignee_column}' not found. Using '{consignee_column}' instead.")
             else:
                 raise ValueError(f"Column '{consignee_column}' not found in DataFrame. Available columns: {list(df.columns)}")
         
@@ -851,8 +664,8 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
             addr_cols = [col for col in df.columns if 'address' in col.lower() or 'consignee.*address' in col.lower()]
             address_column = addr_cols[0] if addr_cols else None
         
-        self.update_status(f"📍 Using columns - Business: {consignee_column}, City: {city_column}, Address: {address_column}")
-        self.update_status(f"🎯 Enhanced Strategy: General + Government + Industry sources")
+        print(f"📍 Using columns - Business: {consignee_column}, City: {city_column}, Address: {address_column}")
+        print(f"🎯 Enhanced Strategy: General + Government + Industry sources")
         
         # Get unique business names with their city/address info
         business_data = []
@@ -881,36 +694,33 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         # Limit number of businesses if specified
         if max_businesses and max_businesses < len(business_list):
             business_list = business_list[:max_businesses]
-            self.update_status(f"🎯 Limited to first {max_businesses} businesses")
+            print(f"🎯 Limited to first {max_businesses} businesses")
         
         total_businesses = len(business_list)
-        self.update_status(f"📋 Found {total_businesses} unique businesses to research")
-        self.update_status(f"⚠️ Note: Enhanced search takes longer (~60-90 seconds per business)")
+        print(f"📋 Found {total_businesses} unique businesses to research")
+        print(f"⚠️ Note: Enhanced search takes ~45-60 seconds per business")
         
-        # Research each business with comprehensive verification
+        # Research each business with simple progress tracking
         successful = 0
         government_verified = 0
         manual_required = 0
         billing_errors = 0
-        timeout_errors = 0
         
         for i, business_info in enumerate(business_list, 1):
             business_name = business_info['name']
             expected_city = business_info['city']
             expected_address = business_info['address']
             
-            # Update progress
-            self.update_progress(i-1, total_businesses, f"Starting research for: {business_name}")
+            # Simple progress update
+            self.simple_update(i, total_businesses, business_name)
             
-            self.update_status(f"📊 Progress: {i}/{total_businesses}")
-            self.update_status(f"🏢 Business: {business_name}")
+            print(f"\n📊 Progress: {i}/{total_businesses}")
+            print(f"🏢 Business: {business_name}")
             if expected_city:
-                self.update_status(f"📍 Expected City: {expected_city}")
-            if expected_address:
-                self.update_status(f"🏠 Expected Address: {expected_address}")
+                print(f"📍 Expected City: {expected_city}")
             
             try:
-                # Enhanced research with comprehensive sources
+                # Enhanced research
                 result = await self.research_business_direct(
                     business_name, expected_city, expected_address
                 )
@@ -923,29 +733,21 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
                     manual_required += 1
                 elif result['status'] == 'billing_error':
                     billing_errors += 1
-                    self.update_status("💳 Stopping research due to billing error.")
+                    print("💳 Stopping research due to billing error.")
                     break
-                elif result['status'] == 'timeout_error':
-                    timeout_errors += 1
                 
-                # Update progress after completion
-                self.update_progress(i, total_businesses, f"Completed: {business_name}")
-                
-                # Shorter delay for better UI responsiveness
-                await asyncio.sleep(2)
+                # Shorter delay
+                await asyncio.sleep(3)
                 
             except Exception as e:
                 error_str = str(e).lower()
                 if "billing" in error_str or "quota" in error_str:
-                    self.update_status(f"💳 BILLING ERROR: {e}")
+                    print(f"💳 BILLING ERROR: {e}")
                     billing_errors += 1
                     break
                 else:
-                    self.update_status(f"❌ Unexpected error: {e}")
+                    print(f"❌ Unexpected error: {e}")
                     manual_required += 1
-        
-        # Final progress update
-        self.update_progress(1, 1, "Research completed!")
         
         # Return enhanced summary
         summary = {
@@ -954,7 +756,6 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
             'government_verified': government_verified,
             'manual_required': manual_required,
             'billing_errors': billing_errors,
-            'timeout_errors': timeout_errors,
             'success_rate': successful/len(self.results)*100 if self.results else 0,
             'government_verification_rate': government_verified/len(self.results)*100 if self.results else 0
         }
@@ -992,7 +793,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         results_df = self.get_results_dataframe()
         
         # For browser download, return the data instead of saving to disk
-        self.update_status(f"📁 Enhanced results prepared for download: {filename}")
+        print(f"📁 Enhanced results prepared for download: {filename}")
         return filename, results_df
     
     def parse_extracted_info_to_csv(self, result):
@@ -1042,7 +843,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
 
 async def research_businesses_from_dataframe(df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=10, enable_justdial=False, filter_info=None, progress_callback=None, status_callback=None):
     """
-    Enhanced research of wood/timber businesses from a DataFrame with comprehensive government and industry sources
+    Enhanced research of wood/timber businesses from a DataFrame - Simplified for Railway
     
     Args:
         df: pandas DataFrame containing business data
