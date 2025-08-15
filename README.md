@@ -2,7 +2,7 @@
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://your-app-url.streamlit.app)
 
-A comprehensive Streamlit application that combines AI-powered data analysis with business contact research capabilities. Upload any CSV or Excel file and instantly start analyzing data, chatting with your dataset, and finding business contact information using advanced web scraping.
+A comprehensive Streamlit application that combines AI-powered data analysis with business contact research and automated email outreach capabilities. Upload any CSV or Excel file and instantly start analyzing data, chatting with your dataset, finding business contact information, and sending curated emails to prospects.
 
 ## 🚀 Features
 
@@ -27,7 +27,30 @@ A comprehensive Streamlit application that combines AI-powered data analysis wit
   - 🌐 Website URLs
   - 📍 Business addresses
   - 📋 Company descriptions
+  - 🏛️ Government verification
+  - 📄 Registration numbers
+- **Multi-Source Research**: Government databases, industry associations, and general web sources
 - **Integrated Workflow**: Research contacts directly from filtered data in Data Explorer
+
+### 📧 **Automated Email Outreach**
+- **Curated Email Campaigns**: Send personalized emails to businesses with found email addresses
+- **Multiple Email Providers**: 
+  - 📧 Gmail SMTP support (with App Password)
+  - 📨 Outlook/Hotmail SMTP
+  - 🟡 Yahoo Mail SMTP
+  - 🚀 SendGrid API
+  - 📮 Mailgun API
+- **Professional Templates**:
+  - Business Introduction
+  - Supplier Inquiry
+  - Industry Networking
+  - Custom templates support
+- **Smart Email Features**:
+  - Personalized variables (business name, address, etc.)
+  - Rate limiting to avoid spam detection
+  - Email delivery tracking
+  - Success/failure reporting
+  - Email logs with timestamps
 
 ### 📈 **Advanced Visualizations**
 - **Quick Visualizations**: Generate charts and graphs instantly
@@ -137,6 +160,44 @@ Navigate through the tabs:
 - Review API cost estimates
 - Start research and download results
 
+#### 4. **📧 Email Outreach Campaign**
+After business research is complete:
+
+**Setup Email Configuration**
+```python
+# Example email setup (Gmail)
+email_config = {
+    'provider': 'gmail',
+    'email': 'your.email@gmail.com',
+    'password': 'your_app_password',  # Use App Password for Gmail
+    'sender_name': 'Your Full Name'
+}
+```
+
+**Send Curated Emails**
+- Filter businesses with email addresses
+- Choose from professional email templates
+- Customize email variables (company name, requirements, etc.)
+- Send personalized emails with rate limiting
+- Track success/failure rates
+- Download email campaign logs
+
+### 📧 Gmail App Password Setup
+
+For Gmail SMTP, you need to use an App Password:
+
+1. **Enable 2-Factor Authentication**:
+   - Go to your Google Account settings
+   - Security > 2-Step Verification
+   - Turn on 2-Step Verification
+
+2. **Generate App Password**:
+   - Go to Google Account > Security
+   - Under "2-Step Verification" click "App passwords"
+   - Select "Mail" and your device
+   - Google will generate a 16-character password
+   - Use this password instead of your regular Gmail password
+
 ### Example Use Cases
 
 **📈 Sales Data Analysis**
@@ -153,11 +214,12 @@ Navigate through the tabs:
 "Show me importers from India"
 ```
 
-**🏢 Business Research**
+**🏢 Business Research & Outreach**
 ```
 Filter by: Country = "USA", Industry = "Technology"
 Research: Find contact details for filtered companies
-Export: Download business contacts as CSV
+Email: Send supplier inquiry to businesses with emails
+Export: Download business contacts and email logs
 ```
 
 ## 📁 Project Structure
@@ -166,9 +228,11 @@ Export: Download business contacts as CSV
 ai-csv-business-analyzer/
 ├── ai_csv_analyzer.py          # Main Streamlit application
 ├── data_explorer_new.py        # Data Explorer with filtering and research
+├── email_integration_examples.py  # Email integration usage examples
 ├── modules/
 │   ├── __init__.py
-│   ├── streamlit_business_researcher.py  # Business research logic
+│   ├── streamlit_business_researcher.py  # Business research with email integration
+│   ├── business_emailer.py              # Email sending module
 │   └── web_scraping_module.py           # Web scraping interface
 ├── .streamlit/
 │   ├── config.toml             # Streamlit configuration
@@ -191,6 +255,31 @@ The app includes optimized Streamlit settings in `.streamlit/config.toml`:
 All sensitive configuration is managed through environment variables:
 - `GROQ_API_KEY`: Required for AI chat functionality
 - `TAVILY_API_KEY`: Required for business research
+
+### Email Configuration
+Supports multiple email providers:
+
+```python
+# Gmail (recommended)
+email_config = {
+    'provider': 'gmail',
+    'smtp_server': 'smtp.gmail.com',
+    'port': 587
+}
+
+# Outlook
+email_config = {
+    'provider': 'outlook',
+    'smtp_server': 'smtp-mail.outlook.com',
+    'port': 587
+}
+
+# SendGrid API
+emailer.configure_sendgrid(
+    api_key='your_sendgrid_api_key',
+    from_email='noreply@yourdomain.com'
+)
+```
 
 ## 🚦 Deployment
 
@@ -220,14 +309,56 @@ CMD ["streamlit", "run", "ai_csv_analyzer.py", "--server.port=8501", "--server.a
 
 ## 📊 API Usage & Costs
 
-### Estimated Costs (Per Business Research)
-- **Groq API**: ~$0.01 per business (Llama-3.3-70b-versatile)
-- **Tavily API**: ~$0.02 per business (web search + extraction)
-- **Total**: ~$0.03 per business researched
+### Estimated Costs (Per Business)
+- **Business Research**: ~$0.03 per business
+  - Groq API: ~$0.01 (Llama-3.3-70b-versatile)
+  - Tavily API: ~$0.02 (web search + extraction)
+- **Email Sending**: Free with SMTP providers
+  - Gmail/Outlook: Free with your existing account
+  - SendGrid: 100 emails/day free tier
+  - Mailgun: 1000 emails/month free tier
 
 ### Rate Limits
 - Groq: 30 requests/minute (free tier)
 - Tavily: 1000 searches/month (free tier)
+- Gmail SMTP: ~500 emails/day (with App Password)
+- Outlook SMTP: ~300 emails/day
+
+## 📧 Email Templates
+
+### Built-in Templates
+
+1. **Business Introduction**
+   - Professional introduction email
+   - Partnership opportunity focus
+   - Contact information request
+
+2. **Supplier Inquiry**
+   - Product requirements specification
+   - Volume and timeline details
+   - Pricing and catalog request
+
+3. **Industry Networking**
+   - Professional networking approach
+   - Collaboration opportunities
+   - Knowledge sharing focus
+
+### Custom Template Example
+```python
+emailer.create_template(
+    template_name='follow_up',
+    subject='Follow-up: Partnership Discussion - {your_company_name}',
+    html_body='''
+    <html>
+    <body>
+        <h2>Hello {business_name},</h2>
+        <p>Following up on our previous email...</p>
+        <p>Best regards,<br>{sender_name}</p>
+    </body>
+    </html>
+    '''
+)
+```
 
 ## 🤝 Contributing
 
@@ -253,6 +384,11 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Check that both GROQ_API_KEY and TAVILY_API_KEY are configured
 - Verify API key validity at respective provider consoles
 
+**"Email sending failed"**
+- For Gmail: Ensure 2FA is enabled and you're using App Password
+- Check email provider settings and credentials
+- Verify rate limits haven't been exceeded
+
 **"File upload errors"**
 - Maximum file size is 200MB
 - Supported formats: .csv, .xlsx, .xls
@@ -262,6 +398,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - 📧 Create an issue in this repository
 - 💬 Join our discussions for questions and feature requests
 - 📖 Check the documentation in this README
+- 🔍 Review `email_integration_examples.py` for email usage examples
 
 ## 🏆 Acknowledgments
 
@@ -273,7 +410,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ---
 
-**Built with ❤️ using Streamlit, Groq AI, and modern web scraping technologies.**
+**Built with ❤️ using Streamlit, Groq AI, modern web scraping, and email automation technologies.**
 
 ## 🎯 Quick Start Examples
 
@@ -284,11 +421,28 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - "Group by Category and sum Amount"
 - "What are the correlations between numeric columns?"
 
-### Business Research Examples:
-1. **Trade Data**: Research importers/exporters for contact details
-2. **Customer Lists**: Find phone and email for sales outreach
-3. **Supplier Data**: Get business addresses and websites
-4. **Lead Generation**: Extract contact info from prospect lists
+### Complete Workflow Examples:
+
+#### 🏢 **B2B Lead Generation**
+1. Upload customer/prospect data
+2. Filter by industry, region, company size
+3. Research contact details (phone, email, website)
+4. Send personalized business introduction emails
+5. Track email delivery and responses
+
+#### 🌍 **Export/Import Outreach**
+1. Upload trade data (HS codes, countries, companies)
+2. Filter by product categories and countries
+3. Research importer/exporter contact information
+4. Send supplier inquiry emails with product requirements
+5. Download contact database and email logs
+
+#### 🤝 **Partnership Development**
+1. Upload industry database
+2. Filter potential partners by criteria
+3. Research company details and decision makers
+4. Send networking emails for collaboration
+5. Manage outreach campaign with tracking
 
 ---
 
