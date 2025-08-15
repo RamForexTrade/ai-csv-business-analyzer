@@ -1,37 +1,36 @@
-# Streamlit Configuration - Local Development
-# For targeted sharing and testing
+# Streamlit Configuration - Production (Railway)
+# Optimized for cloud deployment
 
 [server]
-# Server settings for local access
-port = 8501
-headless = false
-runOnSave = true
-allowRunOnSave = true
+# Let Railway assign the port dynamically
+headless = true
+runOnSave = false
+allowRunOnSave = false
 maxUploadSize = 200  # Max file size in MB for CSV/Excel uploads
+enableCORS = false
+enableXsrfProtection = true
 
 [browser]
-# Browser settings
-serverAddress = "localhost"
-serverPort = 8501
+# Production browser settings
 gatherUsageStats = false
 
 [client]
 # Client settings
-showErrorDetails = true
+showErrorDetails = false
 
 [runner]
 # Runner settings
 magicEnabled = true
 postScriptGC = true
-fastReruns = true
+fastReruns = false
 
 [logger]
 # Logging settings
-level = "info"
+level = "warning"
 
 # Theme settings
 [theme]
-primaryColor = "#1f77b4"  # Blue color matching the app theme
+primaryColor = "#1f77b4"
 backgroundColor = "#ffffff"
 secondaryBackgroundColor = "#f0f2f6"
 textColor = "#262730"
