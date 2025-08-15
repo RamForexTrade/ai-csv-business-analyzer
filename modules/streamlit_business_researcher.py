@@ -208,7 +208,7 @@ class StreamlitBusinessResearcher:
                     # Tag results with search type
                     for result in response['results']:
                         result['search_type'] = search_type
-                    all_search_results.extend(response['results'])
+                    all_results.extend(response['results'])  # FIXED: was all_search_results
                     
             except Exception as e:
                 pass  # Continue with other queries
