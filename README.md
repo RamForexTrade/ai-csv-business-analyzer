@@ -274,3 +274,24 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ---
 
 **Built with ❤️ using Streamlit, Groq AI, and modern web scraping technologies.**
+
+## 🎯 Quick Start Examples
+
+### Sample Questions to Try:
+- "What's the overview of this dataset?"
+- "Show me the top 10 values by count"
+- "Filter where Country contains 'India'"
+- "Group by Category and sum Amount"
+- "What are the correlations between numeric columns?"
+
+### Business Research Examples:
+1. **Trade Data**: Research importers/exporters for contact details
+2. **Customer Lists**: Find phone and email for sales outreach
+3. **Supplier Data**: Get business addresses and websites
+4. **Lead Generation**: Extract contact info from prospect lists
+
+---
+
+⭐ **Star this repository if you find it useful!**
+
+🔗 **Repository**: https://github.com/RamForexTrade/ai-csv-business-analyzer
