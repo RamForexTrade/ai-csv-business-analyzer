@@ -531,7 +531,7 @@ Provide specific insights based on the data shown above. Note that identifier co
                                 col_raw, op, val_raw = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
                                 col = resolve_col(col_raw)
                                 if col:
-                                    val = val_raw.strip().strip("'\\"")
+                                    val = val_raw.strip().strip('\'"')
                                     try:
                                         if isinstance(val, str) and val.lower() in ("true", "false"):
                                             v = True if val.lower() == "true" else False
@@ -562,7 +562,7 @@ Provide specific insights based on the data shown above. Note that identifier co
                     col = resolve_col(col_raw)
                     if not col:
                         continue
-                    val = val_raw.strip().strip("'\\"")
+                    val = val_raw.strip().strip('\'"')
                     try:
                         if isinstance(val, str) and val.lower() in ("true", "false"):
                             v = True if val.lower() == "true" else False
