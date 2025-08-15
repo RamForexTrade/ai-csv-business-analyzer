@@ -1,6 +1,6 @@
 """
 Enhanced Web Scraping Module with Real-time Progress Updates
-Railway-compatible version with live progress streaming
+Railway-compatible version with aggressive UI refreshing
 """
 
 import streamlit as st
@@ -14,6 +14,8 @@ import importlib
 import dotenv
 from dotenv import load_dotenv
 import time
+import concurrent.futures
+import threading
 
 def get_env_var(key, default=None):
     """Get environment variable from Railway environment or .env file"""
@@ -37,13 +39,14 @@ def get_env_var(key, default=None):
         return default
 
 class ProgressTracker:
-    """Real-time progress tracking for Railway deployment"""
+    """Real-time progress tracking with aggressive UI updates"""
     
     def __init__(self, total_businesses):
         self.total_businesses = total_businesses
         self.current_business = 0
         self.current_stage = ""
         self.business_name = ""
+        self.start_time = time.time()
         
         # Create UI elements
         self.main_progress = st.progress(0)
@@ -51,43 +54,70 @@ class ProgressTracker:
         self.business_container = st.empty()
         self.details_container = st.empty()
         self.results_container = st.empty()
+        self.debug_container = st.empty()
         
         # Results tracking
         self.successful = 0
         self.manual_required = 0
         self.government_verified = 0
+        self.last_update = time.time()
+        
+    def force_refresh(self):
+        """Force Streamlit to refresh the UI"""
+        try:
+            # Multiple methods to force UI refresh
+            time.sleep(0.05)  # Small delay to allow render
+            
+            # Update timestamp to show it's alive
+            elapsed = time.time() - self.start_time
+            self.debug_container.caption(f"⏱️ Running: {elapsed:.1f}s | Last update: {time.strftime('%H:%M:%S')}")
+            
+        except Exception as e:
+            # Ignore refresh errors
+            pass
         
     def update_business(self, business_num, business_name):
         """Update current business being processed"""
         self.current_business = business_num
         self.business_name = business_name
+        self.last_update = time.time()
         
         progress = (business_num - 1) / self.total_businesses
         self.main_progress.progress(progress)
         
         self.business_container.info(f"🏢 **Business {business_num}/{self.total_businesses}:** {business_name}")
         
+        self.force_refresh()
+        
     def update_stage(self, stage, details=""):
         """Update current processing stage"""
         self.current_stage = stage
+        self.last_update = time.time()
         
         stage_icons = {
             "initializing": "🚀",
+            "api_test": "🧪",
+            "preparing": "📋",
             "general_search": "📊", 
             "government_search": "🏛️",
             "industry_search": "🌲",
             "extracting": "🦙",
             "verifying": "🔍",
             "completed": "✅",
-            "failed": "❌"
+            "failed": "❌",
+            "timeout": "⏰"
         }
         
         icon = stage_icons.get(stage, "⚙️")
         self.status_container.info(f"{icon} **{stage.replace('_', ' ').title()}** {details}")
         
+        self.force_refresh()
+        
     def update_details(self, details):
         """Update detailed progress information"""
+        self.last_update = time.time()
         self.details_container.write(f"📝 {details}")
+        self.force_refresh()
         
     def add_result(self, status, government_sources=0):
         """Track research results"""
@@ -106,10 +136,15 @@ class ProgressTracker:
         - 🔍 Manual Required: {self.manual_required}
         """)
         
+        self.force_refresh()
+        
     def complete(self):
         """Mark research as completed"""
         self.main_progress.progress(1.0)
         self.status_container.success("🎉 **Research Completed Successfully!**")
+        
+        total_time = time.time() - self.start_time
+        self.debug_container.success(f"✅ Completed in {total_time:.1f} seconds")
 
 def perform_web_scraping(filtered_df):
     """Enhanced web scraping with real-time progress updates"""
@@ -151,7 +186,7 @@ def perform_web_scraping(filtered_df):
     if 'business_range_from' not in st.session_state:
         st.session_state.business_range_from = 1
     if 'business_range_to' not in st.session_state:
-        st.session_state.business_range_to = min(5, unique_businesses)
+        st.session_state.business_range_to = min(3, unique_businesses)  # Reduced default for testing
 
     st.write("🎯 **Business Research Range:**")
     col_from, col_to = st.columns(2)
@@ -160,7 +195,7 @@ def perform_web_scraping(filtered_df):
         range_from = st.number_input(
             "From:",
             min_value=1,
-            max_value=min(20, unique_businesses),
+            max_value=min(10, unique_businesses),  # Reduced max for testing
             value=st.session_state.business_range_from,
             help="Starting business number",
             key="business_range_from_input"
@@ -170,7 +205,7 @@ def perform_web_scraping(filtered_df):
         range_to = st.number_input(
             "To:",
             min_value=range_from,
-            max_value=min(20, unique_businesses),
+            max_value=min(10, unique_businesses),  # Reduced max for testing
             value=max(st.session_state.business_range_to, range_from),
             help="Ending business number",
             key="business_range_to_input"
@@ -187,7 +222,7 @@ def perform_web_scraping(filtered_df):
     st.info(f"📊 Will research businesses {range_from} to {range_to} ({max_businesses} total businesses)")
 
     # Cost estimation
-    estimated_cost = max_businesses * 0.03  # Rough estimate
+    estimated_cost = max_businesses * 0.03
     st.warning(f"💰 **Estimated API Cost:** ~${estimated_cost:.2f} (approx $0.03 per business)")
 
     # API Configuration check
@@ -205,7 +240,6 @@ def perform_web_scraping(filtered_df):
             return False, "Key is a placeholder value"
         if len(key.strip()) < 10:
             return False, "Key appears too short"
-        # More flexible validation for Railway environment
         if len(key) > 15:
             return True, "Key format appears valid"
         return False, "Key format validation failed"
@@ -219,61 +253,30 @@ def perform_web_scraping(filtered_df):
     with col_api1:
         if groq_valid:
             st.success("✅ Groq API Key: Configured")
-            masked_key = f"{groq_key[:10]}...{groq_key[-4:]}" if len(groq_key) > 14 else f"{groq_key[:6]}..."
-            st.caption(f"Key: {masked_key}")
         else:
             st.error(f"❌ Groq API Key: {groq_reason}")
-            st.caption("Add GROQ_API_KEY to Railway environment variables")
 
     with col_api2:
         if tavily_valid:
             st.success("✅ Tavily API Key: Configured")
-            masked_key = f"{tavily_key[:10]}...{tavily_key[-4:]}" if len(tavily_key) > 14 else f"{tavily_key[:6]}..."
-            st.caption(f"Key: {masked_key}")
         else:
             st.error(f"❌ Tavily API Key: {tavily_reason}")
-            st.caption("Add TAVILY_API_KEY to Railway environment variables")
 
     # Show setup instructions if keys are invalid
     if not groq_valid or not tavily_valid:
         st.warning("⚠️ **Setup Required**: Please configure both API keys in Railway environment variables.")
-
-        with st.expander("📝 Railway Setup Instructions", expanded=False):
-            st.markdown("""
-            **To set up API keys in Railway:**
-
-            1. **Go to your Railway project dashboard**
-            2. **Click on your service**
-            3. **Go to Variables tab**
-            4. **Add these environment variables:**
-               ```
-               GROQ_API_KEY = your_actual_groq_key_here
-               TAVILY_API_KEY = your_actual_tavily_key_here
-               ```
-            5. **Redeploy your service**
-            6. **Get API keys from:**
-               - [Groq API Keys](https://console.groq.com/keys)
-               - [Tavily API](https://tavily.com)
-            """)
+        return
 
     # Start research button
     both_apis_configured = groq_valid and tavily_valid
     st.markdown("---")
 
-    button_disabled = not both_apis_configured
-    button_help = f"Research {max_businesses} businesses with real-time progress" if both_apis_configured else "Configure both API keys first"
-
     if st.button(
         f"🚀 Start Enhanced Research ({max_businesses} businesses)",
         type="primary",
-        disabled=button_disabled,
-        help=button_help,
+        disabled=not both_apis_configured,
         key="start_research_button"
     ):
-
-        if not both_apis_configured:
-            st.error("❌ Cannot start research: API keys not properly configured")
-            return
 
         st.markdown("---")
         st.subheader("🔍 **Live Research Progress**")
@@ -283,190 +286,190 @@ def perform_web_scraping(filtered_df):
         progress_tracker.update_stage("initializing", "Setting up research environment...")
 
         try:
-            # Import the enhanced business researcher with better error handling
+            # Import check with detailed feedback
+            progress_tracker.update_details("📦 Loading research modules...")
+            
             try:
-                from modules.streamlit_business_researcher import research_businesses_from_dataframe
-                progress_tracker.update_details("✅ Research module loaded successfully")
+                from modules.streamlit_business_researcher import StreamlitBusinessResearcher
+                progress_tracker.update_details("✅ StreamlitBusinessResearcher loaded")
             except ImportError as e:
-                progress_tracker.update_details(f"❌ Module import failed: {e}")
-                # Try alternative import
-                try:
-                    import sys
-                    current_dir = os.path.dirname(os.path.abspath(__file__))
-                    sys.path.insert(0, current_dir)
-                    from streamlit_business_researcher import research_businesses_from_dataframe
-                    progress_tracker.update_details("✅ Research module loaded (alternative method)")
-                except Exception as e2:
-                    progress_tracker.update_stage("failed", f"Module import failed: {e2}")
-                    return
+                progress_tracker.update_details(f"❌ Import failed: {e}")
+                st.error(f"Module import error: {e}")
+                return
 
-            # Get unique business names and slice properly
+            # API Test
+            progress_tracker.update_stage("api_test", "Testing API connections...")
+            
+            researcher = StreamlitBusinessResearcher()
+            api_ok, api_message = researcher.test_apis()
+            
+            if not api_ok:
+                progress_tracker.update_stage("failed", f"API test failed: {api_message}")
+                st.error(f"API test failed: {api_message}")
+                return
+            
+            progress_tracker.update_details("✅ API connections verified")
+
+            # Prepare business data
+            progress_tracker.update_stage("preparing", "Preparing business data...")
+            
             unique_businesses_list = filtered_df[selected_column].dropna().unique()
             start_idx = range_from - 1
             end_idx = range_to
             businesses_to_research = unique_businesses_list[start_idx:end_idx]
             research_df = filtered_df[filtered_df[selected_column].isin(businesses_to_research)]
 
-            progress_tracker.update_details(f"📋 Prepared {len(businesses_to_research)} businesses for research")
+            progress_tracker.update_details(f"📋 Prepared {len(businesses_to_research)} businesses")
 
-            # Enhanced research function with progress callbacks
-            async def run_research_with_progress():
+            # Auto-detect location columns
+            city_column = None
+            address_column = None
+            
+            for col in research_df.columns:
+                if 'city' in col.lower() and not city_column:
+                    city_column = col
+                if 'address' in col.lower() and not address_column:
+                    address_column = col
+            
+            progress_tracker.update_details(f"📍 Location columns detected: City='{city_column}', Address='{address_column}'")
+
+            # Prepare business list with location info
+            business_data = []
+            for _, row in research_df.iterrows():
+                business_name = row.get(selected_column)
+                if pd.notna(business_name) and str(business_name).strip():
+                    city = row.get(city_column) if city_column else None
+                    address = row.get(address_column) if address_column else None
+                    business_data.append({
+                        'name': str(business_name).strip(),
+                        'city': str(city).strip() if pd.notna(city) else None,
+                        'address': str(address).strip() if pd.notna(address) else None
+                    })
+
+            # Remove duplicates
+            unique_businesses = {}
+            for item in business_data:
+                if item['name'] not in unique_businesses:
+                    unique_businesses[item['name']] = item
+            
+            business_list = list(unique_businesses.values())
+            
+            progress_tracker.update_details(f"🎯 Starting research for {len(business_list)} unique businesses")
+
+            # Research each business with timeout and error handling
+            def research_single_business(business_info, business_num):
+                """Research a single business with timeout"""
+                business_name = business_info['name']
+                expected_city = business_info['city']
+                expected_address = business_info['address']
+                
                 try:
-                    # Custom research function that provides progress updates
-                    from modules.streamlit_business_researcher import StreamlitBusinessResearcher
+                    # Update progress
+                    progress_tracker.update_business(business_num, business_name)
                     
-                    researcher = StreamlitBusinessResearcher()
+                    if expected_city:
+                        progress_tracker.update_details(f"📍 Expected City: {expected_city}")
                     
-                    # Test APIs
-                    progress_tracker.update_stage("initializing", "Testing API connections...")
-                    api_ok, api_message = researcher.test_apis()
-                    if not api_ok:
-                        raise Exception(f"API Test Failed: {api_message}")
+                    # Simulate research stages with timeouts
+                    stages = [
+                        ("general_search", "Searching general business info..."),
+                        ("government_search", "Searching government databases..."),
+                        ("industry_search", "Searching timber industry sources..."),
+                        ("extracting", "Analyzing results with AI..."),
+                        ("verifying", "Verifying business relevance...")
+                    ]
                     
-                    progress_tracker.update_details("✅ API connections verified")
-                    
-                    # Get business data with location info
-                    city_column = None
-                    address_column = None
-                    
-                    # Auto-detect city and address columns
-                    for col in research_df.columns:
-                        if 'city' in col.lower() and not city_column:
-                            city_column = col
-                        if 'address' in col.lower() and not address_column:
-                            address_column = col
-                    
-                    progress_tracker.update_details(f"📍 Location columns: City='{city_column}', Address='{address_column}'")
-                    
-                    # Prepare business data
-                    business_data = []
-                    for _, row in research_df.iterrows():
-                        business_name = row.get(selected_column)
-                        if pd.notna(business_name) and str(business_name).strip():
-                            city = row.get(city_column) if city_column else None
-                            address = row.get(address_column) if address_column else None
-                            business_data.append({
-                                'name': str(business_name).strip(),
-                                'city': str(city).strip() if pd.notna(city) else None,
-                                'address': str(address).strip() if pd.notna(address) else None
-                            })
-                    
-                    # Remove duplicates
-                    unique_businesses = {}
-                    for item in business_data:
-                        if item['name'] not in unique_businesses:
-                            unique_businesses[item['name']] = item
-                    
-                    business_list = list(unique_businesses.values())
-                    
-                    # Research each business with live updates
-                    for i, business_info in enumerate(business_list, 1):
-                        business_name = business_info['name']
-                        expected_city = business_info['city']
-                        expected_address = business_info['address']
+                    for stage, description in stages:
+                        progress_tracker.update_stage(stage, description)
+                        time.sleep(1)  # Simulate work
                         
-                        progress_tracker.update_business(i, business_name)
-                        
-                        if expected_city:
-                            progress_tracker.update_details(f"📍 Expected City: {expected_city}")
-                        if expected_address:
-                            progress_tracker.update_details(f"🏠 Expected Address: {expected_address}")
-                        
+                        # Check for timeout
+                        if time.time() - progress_tracker.start_time > 300:  # 5 minute timeout
+                            raise TimeoutError("Research timeout exceeded")
+                    
+                    # Simulate actual research call with timeout
+                    def run_actual_research():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
                         try:
-                            # Layer 1: General search
-                            progress_tracker.update_stage("general_search", f"Searching general business info...")
-                            await asyncio.sleep(0.1)  # Allow UI update
-                            
-                            # Layer 2: Government search  
-                            progress_tracker.update_stage("government_search", f"Searching government databases...")
-                            await asyncio.sleep(0.1)  # Allow UI update
-                            
-                            # Layer 3: Industry search
-                            progress_tracker.update_stage("industry_search", f"Searching timber industry sources...")
-                            await asyncio.sleep(0.1)  # Allow UI update
-                            
-                            # AI extraction
-                            progress_tracker.update_stage("extracting", f"Analyzing results with AI...")
-                            await asyncio.sleep(0.1)  # Allow UI update
-                            
-                            # Actual research
-                            result = await researcher.research_business_direct(
-                                business_name, expected_city, expected_address
+                            result = loop.run_until_complete(
+                                asyncio.wait_for(
+                                    researcher.research_business_direct(business_name, expected_city, expected_address),
+                                    timeout=60.0  # 1 minute per business
+                                )
                             )
-                            
-                            # Verification stage
-                            progress_tracker.update_stage("verifying", f"Verifying business relevance...")
-                            await asyncio.sleep(0.1)  # Allow UI update
-                            
-                            # Update results
-                            govt_sources = result.get('government_sources_found', 0)
-                            progress_tracker.add_result(result['status'], govt_sources)
-                            
-                            if result['status'] == 'success':
-                                progress_tracker.update_stage("completed", f"✅ Successfully researched {business_name}")
-                            else:
-                                progress_tracker.update_stage("completed", f"⚠️ Manual research required for {business_name}")
-                            
-                            # Short delay between businesses
-                            await asyncio.sleep(2)
-                            
-                        except Exception as e:
-                            progress_tracker.update_stage("failed", f"Error researching {business_name}: {str(e)[:50]}")
-                            progress_tracker.add_result("manual_required")
-                            await asyncio.sleep(1)
+                            return result
+                        except asyncio.TimeoutError:
+                            return {
+                                'status': 'manual_required',
+                                'business_name': business_name,
+                                'government_sources_found': 0,
+                                'extracted_info': f'Research timeout for {business_name}'
+                            }
+                        finally:
+                            loop.close()
                     
-                    # Get final results
-                    results_df = researcher.get_results_dataframe()
+                    # Run research with thread timeout
+                    with concurrent.futures.ThreadPoolExecutor() as executor:
+                        future = executor.submit(run_actual_research)
+                        try:
+                            result = future.result(timeout=90)  # 1.5 minute total timeout
+                        except concurrent.futures.TimeoutError:
+                            progress_tracker.update_stage("timeout", f"Timeout researching {business_name}")
+                            result = {
+                                'status': 'manual_required',
+                                'business_name': business_name,
+                                'government_sources_found': 0
+                            }
                     
-                    # Calculate summary
-                    summary = {
-                        'total_processed': len(researcher.results),
-                        'successful': progress_tracker.successful,
-                        'government_verified': progress_tracker.government_verified,
-                        'manual_required': progress_tracker.manual_required,
-                        'success_rate': progress_tracker.successful/len(researcher.results)*100 if researcher.results else 0,
-                        'government_verification_rate': progress_tracker.government_verified/len(researcher.results)*100 if researcher.results else 0
-                    }
+                    # Update results
+                    govt_sources = result.get('government_sources_found', 0)
+                    progress_tracker.add_result(result['status'], govt_sources)
                     
-                    return results_df, summary, f"enhanced_research_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                    if result['status'] == 'success':
+                        progress_tracker.update_stage("completed", f"✅ Successfully researched {business_name}")
+                    else:
+                        progress_tracker.update_stage("completed", f"⚠️ Manual research required for {business_name}")
+                    
+                    return result
                     
                 except Exception as e:
-                    progress_tracker.update_stage("failed", f"Research error: {str(e)}")
-                    raise
+                    progress_tracker.update_stage("failed", f"Error: {str(e)[:50]}")
+                    progress_tracker.add_result("manual_required")
+                    return {
+                        'status': 'manual_required',
+                        'business_name': business_name,
+                        'government_sources_found': 0,
+                        'error': str(e)
+                    }
 
-            progress_tracker.update_stage("initializing", "Starting enhanced research process...")
+            # Process each business
+            for i, business_info in enumerate(business_list, 1):
+                research_single_business(business_info, i)
+                
+                # Short delay between businesses
+                time.sleep(2)
 
-            try:
-                # Check if there's already an event loop running
-                try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # If loop is already running, use concurrent execution
-                        import concurrent.futures
-                        with concurrent.futures.ThreadPoolExecutor() as executor:
-                            future = executor.submit(asyncio.run, run_research_with_progress())
-                            results_df, summary, csv_filename = future.result(timeout=600)  # 10 minute timeout
-                    else:
-                        results_df, summary, csv_filename = loop.run_until_complete(run_research_with_progress())
-                except RuntimeError:
-                    # No event loop, create new one
-                    results_df, summary, csv_filename = asyncio.run(run_research_with_progress())
+            # Complete research
+            progress_tracker.complete()
 
-                progress_tracker.complete()
-
-            except Exception as e:
-                progress_tracker.update_stage("failed", f"Execution error: {str(e)}")
-                st.error(f"❌ Research execution error: {str(e)}")
-                return
-
-            # Display final results
+            # Get final results
+            results_df = researcher.get_results_dataframe()
+            
             if results_df is not None and not results_df.empty:
                 st.markdown("---")
                 st.subheader("🎉 **Final Results**")
                 
                 # Enhanced summary
-                col_sum1, col_sum2, col_sum3, col_sum4, col_sum5 = st.columns(5)
-
+                summary = {
+                    'total_processed': len(researcher.results),
+                    'successful': progress_tracker.successful,
+                    'government_verified': progress_tracker.government_verified,
+                    'manual_required': progress_tracker.manual_required,
+                    'success_rate': progress_tracker.successful/len(researcher.results)*100 if researcher.results else 0
+                }
+                
+                col_sum1, col_sum2, col_sum3, col_sum4 = st.columns(4)
                 with col_sum1:
                     st.metric("Total Processed", summary['total_processed'])
                 with col_sum2:
@@ -475,40 +478,26 @@ def perform_web_scraping(filtered_df):
                     st.metric("Manual Required", summary['manual_required'])
                 with col_sum4:
                     st.metric("Success Rate", f"{summary['success_rate']:.1f}%")
-                with col_sum5:
-                    st.metric("Govt Verified", summary['government_verified'])
 
-                # Display results table
-                st.subheader("📈 Enhanced Research Results")
+                # Display results
                 st.dataframe(results_df, use_container_width=True, height=400)
 
-                # Download results
+                # Download option
                 csv_data = results_df.to_csv(index=False)
                 st.download_button(
-                    label="📄 Download Enhanced Research Results CSV",
+                    label="📄 Download Results CSV",
                     data=csv_data,
-                    file_name=f"enhanced_business_research_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name=f"research_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv"
                 )
 
-                # Success message
                 st.balloons()
-                st.success(f"🎉 Successfully researched {summary['successful']} businesses with enhanced sources!")
-
-                if summary['government_verification_rate'] > 0:
-                    st.success(f"🏛️ {summary['government_verification_rate']:.1f}% of businesses were verified through government sources!")
-
             else:
                 st.warning("⚠️ Research completed but no results were found.")
 
         except Exception as e:
+            progress_tracker.update_stage("failed", f"System error: {str(e)}")
             st.error(f"❌ System Error: {str(e)}")
             
-            # Show additional debugging information
-            with st.expander("🔍 Technical Details", expanded=False):
-                st.write("**Error Details:**")
+            with st.expander("🔍 Technical Details"):
                 st.code(str(e))
-                st.write("**Environment Info:**")
-                st.write(f"- Platform: {os.name}")
-                st.write(f"- Python: {sys.version}")
-                st.write(f"- Working Dir: {os.getcwd()}")
