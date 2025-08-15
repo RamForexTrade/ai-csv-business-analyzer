@@ -2,12 +2,26 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from datetime import datetime
+import asyncio
 
 # Import web scraping module for business research
 try:
     from modules.web_scraping_module import perform_web_scraping
 except ImportError:
     perform_web_scraping = None
+
+# Import email configuration
+try:
+    from email_config import EMAIL_CONFIG
+except ImportError:
+    EMAIL_CONFIG = None
+
+# Import enhanced business researcher with email integration
+try:
+    from modules.streamlit_business_researcher import research_businesses_from_dataframe, send_curated_business_emails
+    business_research_available = True
+except ImportError:
+    business_research_available = False
 
 def create_data_explorer(df, identifier_cols):
     """
@@ -201,3 +215,177 @@ def create_data_explorer(df, identifier_cols):
             perform_web_scraping(research_df)
         else:
             st.error("⚠️ Business research module not available. Please check your installation.")
+        
+        # Email sending section - Added after business research
+        show_email_sending_section()
+
+def show_email_sending_section():
+    """Show email sending options after business research"""
+    
+    # Check if research results exist
+    if 'research_completed' in st.session_state and st.session_state.research_completed:
+        
+        st.markdown("---")
+        st.subheader("📧 Send Curated Emails")
+        
+        # Check if businesses with emails are available
+        researcher = st.session_state.get('researcher_instance')
+        if researcher:
+            businesses_with_emails = researcher.get_businesses_with_emails()
+            
+            if len(businesses_with_emails) > 0:
+                st.success(f"📧 Found {len(businesses_with_emails)} businesses with email addresses!")
+                
+                # Show email template options
+                col_e1, col_e2 = st.columns(2)
+                
+                with col_e1:
+                    email_template = st.selectbox(
+                        "📝 Email Template:",
+                        ["business_intro", "supplier_inquiry", "networking"],
+                        format_func=lambda x: {
+                            "business_intro": "🤝 Business Introduction",
+                            "supplier_inquiry": "📦 Supplier Inquiry", 
+                            "networking": "🌐 Industry Networking"
+                        }[x]
+                    )
+                
+                with col_e2:
+                    delay_seconds = st.number_input(
+                        "⏱️ Delay between emails (seconds):",
+                        min_value=1, max_value=10, value=3,
+                        help="Recommended: 2-3 seconds to avoid spam detection"
+                    )
+                
+                # Send emails button
+                col_send1, col_send2 = st.columns([1, 1])
+                
+                with col_send1:
+                    if st.button("📧 Send Emails to All", type="primary", key="send_all_emails"):
+                        if EMAIL_CONFIG:
+                            send_emails_to_businesses(researcher, businesses_with_emails, email_template, delay_seconds)
+                        else:
+                            st.error("❌ Email configuration not found. Please check email_config.py")
+                
+                with col_send2:
+                    st.metric("📧 Ready to Send", len(businesses_with_emails))
+                
+                # Show preview of businesses with emails
+                with st.expander("👀 Preview Businesses with Emails"):
+                    preview_df = businesses_with_emails[['business_name', 'email', 'phone', 'website']].head(10)
+                    st.dataframe(preview_df, use_container_width=True)
+                    if len(businesses_with_emails) > 10:
+                        st.caption(f"Showing first 10 of {len(businesses_with_emails)} businesses")
+            
+            else:
+                st.warning("📧 No email addresses found in research results.")
+                st.info("💡 Try researching more businesses to find email contacts.")
+        
+        else:
+            st.info("🔍 Complete business research first to send emails.")
+    
+    else:
+        st.info("🔍 Complete business research first to see email sending options.")
+
+def send_emails_to_businesses(researcher, businesses_with_emails, template_name, delay_seconds):
+    """Send emails to businesses with progress tracking"""
+    
+    if not EMAIL_CONFIG:
+        st.error("❌ Email configuration not available")
+        return
+    
+    st.write("### 📧 Sending Email Campaign...")
+    
+    # Configure email with stored settings
+    success, message = researcher.configure_email(
+        email_provider=EMAIL_CONFIG['provider'],
+        email_address=EMAIL_CONFIG['email'],
+        email_password=EMAIL_CONFIG['password'],
+        sender_name=EMAIL_CONFIG['sender_name']
+    )
+    
+    if not success:
+        st.error(f"❌ Email configuration failed: {message}")
+        return
+    
+    # Prepare email variables
+    email_variables = {
+        'your_company_name': 'TeakWood Business',
+        'sender_name': EMAIL_CONFIG['sender_name'],
+        'your_phone': '+91-9876543210',
+        'your_email': EMAIL_CONFIG['email'],
+        'product_requirements': 'High-quality teak and timber products',
+        'volume_requirements': 'Medium to large volumes',
+        'timeline_requirements': 'Flexible, ongoing partnership',
+        'quality_requirements': 'Premium grade, certified sustainable'
+    }
+    
+    # Progress tracking
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
+    # Send emails asynchronously
+    async def run_email_campaign():
+        def progress_callback(current, total):
+            progress = current / total
+            progress_bar.progress(progress)
+        
+        def status_callback(status_message):
+            status_text.text(status_message)
+        
+        try:
+            email_result = await researcher.send_curated_emails(
+                selected_businesses=businesses_with_emails,
+                template_name=template_name,
+                email_variables=email_variables,
+                delay_seconds=delay_seconds,
+                progress_callback=progress_callback,
+                status_callback=status_callback
+            )
+            return email_result
+        except Exception as e:
+            st.error(f"❌ Email sending failed: {str(e)}")
+            return None
+    
+    # Run email campaign
+    try:
+        status_text.text("📧 Starting email campaign...")
+        
+        # Get or create event loop
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        # Send emails
+        email_result = loop.run_until_complete(run_email_campaign())
+        
+        if email_result and email_result['success']:
+            progress_bar.progress(100)
+            status_text.text("✅ Email campaign completed!")
+            
+            # Show results
+            summary = email_result['summary']
+            st.success(f"🎉 Email campaign completed!")
+            
+            col_r1, col_r2, col_r3 = st.columns(3)
+            with col_r1:
+                st.metric("📧 Sent", summary['emails_sent'])
+            with col_r2:
+                st.metric("❌ Failed", summary['emails_failed'])
+            with col_r3:
+                st.metric("📊 Success Rate", f"{summary['success_rate']:.1f}%")
+            
+            # Email log download
+            if st.button("📁 Download Email Log"):
+                log_filename = researcher.save_email_log()
+                st.success(f"📁 Email log saved: {log_filename}")
+        
+        else:
+            st.error("❌ Email campaign failed")
+            
+    except Exception as e:
+        st.error(f"❌ Email campaign error: {str(e)}")
+        progress_bar.progress(0)
+        status_text.text("❌ Failed")
