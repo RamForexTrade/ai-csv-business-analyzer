@@ -1,6 +1,7 @@
 """
-Basic Streamlit Business Researcher - Enhanced features removed
-Simple web scraping for basic business contact information
+Enhanced Streamlit Business Researcher with Government Sources
+Includes specific searches for government business databases and official registrations
+Focused on teak, wood, timber, lumber businesses with city/address verification
 """
 
 import asyncio
@@ -99,21 +100,36 @@ class StreamlitBusinessResearcher:
         return True, "All APIs working"
     
     async def research_business_direct(self, business_name, expected_city=None, expected_address=None):
-        """Research business using Tavily + Groq directly"""
+        """Research business using comprehensive multi-layer strategy"""
         
         print(f"🔍 Researching: {business_name}")
         
         try:
-            # Step 1: Search with Tavily - Focus on wood/timber businesses
-            search_results = self.search_with_tavily(business_name)
+            # Multi-layer enhanced search strategy
+            all_search_results = []
             
-            if not search_results:
+            # Layer 1: General wood/timber business information
+            print("   📊 Layer 1: General business search...")
+            general_results = self.search_general_business_info(business_name)
+            all_search_results.extend(general_results)
+            
+            # Layer 2: Government and official sources
+            print("   🏛️ Layer 2: Government sources search...")
+            government_results = self.search_government_sources(business_name)
+            all_search_results.extend(government_results)
+            
+            # Layer 3: Industry-specific sources
+            print("   🌲 Layer 3: Timber industry sources...")
+            industry_results = self.search_industry_sources(business_name)
+            all_search_results.extend(industry_results)
+            
+            if not all_search_results:
                 print(f"❌ No search results found for {business_name}")
                 return self.create_manual_fallback(business_name)
             
-            # Step 2: Extract contact info using Groq AI with relevance verification
+            # Step 2: Extract contact info using Groq AI with comprehensive data and relevance verification
             contact_info = await self.extract_contacts_with_groq(
-                business_name, search_results, expected_city, expected_address
+                business_name, all_search_results, expected_city, expected_address
             )
             
             return contact_info
@@ -127,74 +143,157 @@ class StreamlitBusinessResearcher:
                 print(f"❌ Error researching {business_name}: {e}")
                 return self.create_manual_fallback(business_name)
     
-    def search_with_tavily(self, business_name):
-        """Search for business information using Tavily API - Focus on wood/timber"""
+    def search_general_business_info(self, business_name):
+        """Search for general wood/timber business information"""
         
-        print(f"   🌐 Searching Tavily for: {business_name}")
+        search_queries = [
+            f"{business_name} wood timber teak contact information phone email",
+            f"{business_name} lumber plywood business address website",
+            f"{business_name} timber trading company official contact",
+            f"{business_name} wood export import contact details"
+        ]
         
-        try:
-            # Wood/timber focused search queries
-            search_queries = [
-                f"{business_name} wood timber teak contact information phone email",
-                f"{business_name} lumber plywood business address",
-                f"{business_name} timber trading company website official",
-                f"{business_name} wood export import contact"
-            ]
-            
-            all_results = []
-            
-            for query in search_queries:
-                print(f"      📝 Query: {query}")
+        return self.execute_search_queries(search_queries, "General")
+    
+    def search_government_sources(self, business_name):
+        """Search specifically in government databases and official sources"""
+        
+        # Government and official database searches for wood/timber businesses
+        government_queries = [
+            f'"{business_name}" site:gov.in business registration timber',
+            f'"{business_name}" site:nic.in company details wood',
+            f'"{business_name}" ministry commerce industry registration timber',
+            f'"{business_name}" GST registration number lumber',
+            f'"{business_name}" ROC registrar companies wood',
+            f'"{business_name}" forest department license timber',
+            f'"{business_name}" pollution control board clearance wood',
+            f'"{business_name}" shop establishment license timber',
+            f'"{business_name}" trade license municipal corporation wood',
+            f'"{business_name}" forest produce trading license',
+            f'"{business_name}" environmental clearance wood industry',
+            f'"{business_name}" state forest corporation timber dealer'
+        ]
+        
+        return self.execute_search_queries(government_queries, "Government")
+    
+    def search_industry_sources(self, business_name):
+        """Search in timber/wood industry specific sources"""
+        
+        industry_queries = [
+            f'"{business_name}" timber traders association member',
+            f'"{business_name}" wood importers exporters directory',
+            f'"{business_name}" forest produce trading license',
+            f'"{business_name}" timber merchants federation',
+            f'"{business_name}" wood industry chamber commerce',
+            f'"{business_name}" lumber dealers association',
+            f'"{business_name}" plywood manufacturers association',
+            f'"{business_name}" teak wood suppliers directory',
+            f'"{business_name}" timber industry federation member',
+            f'"{business_name}" wood products manufacturers association',
+            f'"{business_name}" forest based industries directory',
+            f'"{business_name}" timber trade association registry'
+        ]
+        
+        return self.execute_search_queries(industry_queries, "Industry")
+    
+    def execute_search_queries(self, queries, search_type):
+        """Execute a list of search queries and return results"""
+        
+        all_results = []
+        
+        for query in queries:
+            try:
+                print(f"      📝 {search_type}: {query[:60]}...")
                 
+                # Search with Tavily using preferred domains
                 response = self.tavily_client.search(
                     query=query,
-                    max_results=3,
+                    max_results=2,  # Reduced per query but more queries
                     search_depth="advanced",
-                    include_domains=None,
-                    exclude_domains=["facebook.com", "twitter.com", "instagram.com"]
+                    include_domains=self.get_preferred_domains(search_type),
+                    exclude_domains=["facebook.com", "twitter.com", "instagram.com", "linkedin.com"]
                 )
                 
                 if response.get('results'):
+                    # Tag results with search type
+                    for result in response['results']:
+                        result['search_type'] = search_type
                     all_results.extend(response['results'])
-                    print(f"      ✅ Found {len(response['results'])} results")
+                    print(f"         ✅ Found {len(response['results'])} results")
                 else:
-                    print(f"      ❌ No results for this query")
-            
-            print(f"   📊 Total search results: {len(all_results)}")
-            return all_results
-            
-        except Exception as e:
-            error_str = str(e).lower()
-            if "billing" in error_str or "quota" in error_str or "insufficient" in error_str or "limit" in error_str:
-                print(f"💳 Tavily Billing Error: {e}")
-                raise Exception(f"Tavily API billing issue: {e}")
-            else:
-                print(f"   ❌ Tavily search error: {e}")
-                return []
+                    print(f"         ❌ No results")
+                    
+            except Exception as e:
+                print(f"         ⚠️ Error: {str(e)[:50]}")
+                
+        print(f"   📊 {search_type} total: {len(all_results)} results")
+        return all_results
     
-    def format_search_results(self, search_results):
-        """Format Tavily search results for Groq analysis"""
+    def get_preferred_domains(self, search_type):
+        """Get preferred domains for different search types"""
         
-        formatted_results = []
+        domain_preferences = {
+            "Government": [
+                "gov.in", "nic.in", "india.gov.in", "mca.gov.in", 
+                "cbic.gov.in", "incometax.gov.in", "gst.gov.in",
+                "moef.gov.in", "forest.gov.in", "cpcb.nic.in",
+                "sfac.in", "fsi.nic.in"
+            ],
+            "Industry": [
+                "fidr.org", "plywoodassociation.org", "itpo.gov.in",
+                "cii.in", "ficci.in", "assocham.org", "fidr.in",
+                "woodindustry.in", "timberassociation.org"
+            ],
+            "General": None  # No domain restriction for general search
+        }
         
-        for i, result in enumerate(search_results[:10], 1):
-            formatted_result = f"""
-            RESULT {i}:
-            Title: {result.get('title', 'No title')}
-            URL: {result.get('url', 'No URL')}
-            Content: {result.get('content', 'No content')[:500]}...
-            """
-            formatted_results.append(formatted_result)
+        return domain_preferences.get(search_type)
+    
+    def categorize_search_results(self, search_results):
+        """Categorize results by source type"""
         
-        return '\n'.join(formatted_results)
+        categorized = {
+            'Government': [],
+            'Industry': [],
+            'General': []
+        }
+        
+        for result in search_results:
+            search_type = result.get('search_type', 'General')
+            categorized[search_type].append(result)
+        
+        return categorized
+    
+    def format_search_results_enhanced(self, categorized_results):
+        """Format categorized search results for enhanced analysis"""
+        
+        formatted_sections = []
+        
+        for category, results in categorized_results.items():
+            if results:
+                formatted_sections.append(f"\n=== {category.upper()} SOURCES ===")
+                
+                for i, result in enumerate(results[:4], 1):  # Top 4 per category
+                    formatted_result = f"""
+                    {category.upper()} RESULT {i}:
+                    Title: {result.get('title', 'No title')}
+                    URL: {result.get('url', 'No URL')}
+                    Content: {result.get('content', 'No content')[:400]}...
+                    """
+                    formatted_sections.append(formatted_result)
+        
+        return '\n'.join(formatted_sections)
     
     async def extract_contacts_with_groq(self, business_name, search_results, expected_city=None, expected_address=None):
-        """Use Groq (Llama) to extract contact information with city/address relevance verification"""
+        """Enhanced Groq extraction with government data analysis and city/address verification"""
         
-        print(f"   🦙 Analyzing results with Groq (Llama)...")
+        print(f"   🦙 Analyzing {len(search_results)} results with Enhanced Groq...")
         
-        # Prepare search results text for Groq
-        results_text = self.format_search_results(search_results)
+        # Categorize results by source type
+        categorized_results = self.categorize_search_results(search_results)
+        
+        # Format results for Groq analysis
+        results_text = self.format_search_results_enhanced(categorized_results)
         
         # Build the expected location context
         location_context = ""
@@ -208,19 +307,26 @@ LOCATION VERIFICATION REQUIRED:
 You must verify if the business address/city found in search results matches or is relevant to the expected location above.
 """
         
-        prompt = f"""You are analyzing search results for businesses related to TEAK, WOOD, TIMBER, LUMBER, and PLYWOOD industries.
+        # Count sources by type
+        govt_sources = len(categorized_results.get('Government', []))
+        industry_sources = len(categorized_results.get('Industry', []))
+        
+        prompt = f"""You are analyzing comprehensive search results for businesses related to TEAK, WOOD, TIMBER, LUMBER, and PLYWOOD industries.
+Results include {govt_sources} government sources, {industry_sources} industry sources, and general web sources.
 
 BUSINESS TO RESEARCH: "{business_name}"
 
 {location_context}
 
-SEARCH RESULTS:
+COMPREHENSIVE SEARCH RESULTS:
 {results_text}
 
 INSTRUCTIONS:
 1. FOCUS: Only analyze if this business is related to teak, wood, timber, lumber, plywood, or wooden products industry
 2. LOCATION VERIFICATION: If expected city/address is provided, verify if found business location matches or is geographically relevant
-3. EXTRACT: Contact information only if business is wood/timber related AND location is relevant
+3. GOVERNMENT VERIFICATION: Priority to information from government sources (.gov.in domains)
+4. CROSS-VERIFICATION: Cross-verify information across multiple source types
+5. EXTRACT: Complete business information including official registrations and licenses
 
 EXTRACT AND FORMAT:
 BUSINESS_NAME: {business_name}
@@ -231,17 +337,23 @@ EMAIL: [extract email address if found and business is relevant, or "Not found"]
 WEBSITE: [extract official website URL if found and business is relevant, or "Not found"]
 ADDRESS: [extract business address if found and business is relevant, or "Not found"]
 CITY: [extract city from address if found, or "Not found"]
-DESCRIPTION: [brief description focusing on wood/timber business activities, or "No description available"]
-CONFIDENCE: [rate 1-10 how confident you are this is the correct wood/timber business]
-RELEVANCE_NOTES: [explain why location and industry are relevant or not]
+REGISTRATION_NUMBER: [extract company registration/GST number if found in government sources, or "Not found"]
+LICENSE_DETAILS: [extract any timber/forest licenses mentioned, or "Not found"]
+DIRECTORS: [extract director names if found in government records, or "Not found"]
+DESCRIPTION: [brief description focusing on wood/timber business activities based on all sources]
+GOVERNMENT_VERIFIED: [YES if found in government sources, NO if only general/industry sources]
+CONFIDENCE: [rate 1-10 based on quality, number of sources, and government verification]
+RELEVANCE_NOTES: [explain industry relevance, location match, and source quality]
 
 STRICT RULES:
 1. Only extract information if INDUSTRY_RELEVANT = YES
 2. Only extract information if LOCATION_RELEVANT = YES or UNKNOWN
 3. If business is not wood/timber related, set all contact fields to "Not relevant - not wood/timber business"
 4. If location doesn't match expected city/address, set all contact fields to "Not relevant - location mismatch"
-5. Don't make up or assume any contact details
-6. Prefer official websites over directory listings
+5. Prioritize information from government sources over other sources
+6. Mark GOVERNMENT_VERIFIED = YES only if found in .gov.in domains
+7. Higher confidence for government-verified businesses
+8. Include registration numbers and licenses for legitimacy verification
 
 Format your response exactly as shown above with the field names.
         """
@@ -256,7 +368,7 @@ Format your response exactly as shown above with the field names.
                 json={
                     "model": "llama-3.3-70b-versatile",
                     "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 1000,
+                    "max_tokens": 1200,
                     "temperature": 0.1
                 },
                 timeout=60
@@ -266,7 +378,7 @@ Format your response exactly as shown above with the field names.
                 result = response.json()
                 if result.get('choices') and result['choices'][0].get('message', {}).get('content'):
                     extracted_info = result['choices'][0]['message']['content']
-                    print(f"   ✅ Groq extraction completed")
+                    print(f"   ✅ Enhanced Groq extraction completed")
                     
                     # Check if we need second verification
                     needs_verification = await self.check_if_needs_verification(extracted_info, business_name, results_text, expected_city, expected_address)
@@ -279,8 +391,11 @@ Format your response exactly as shown above with the field names.
                         'business_name': business_name,
                         'extracted_info': extracted_info,
                         'raw_search_results': search_results,
+                        'government_sources_found': govt_sources,
+                        'industry_sources_found': industry_sources,
+                        'total_sources': len(search_results),
                         'research_date': datetime.now().isoformat(),
-                        'method': 'Tavily + Groq (Llama) - Wood/Timber Focused',
+                        'method': 'Enhanced Tavily + Groq - Government + Industry Sources',
                         'status': 'success',
                         'expected_city': expected_city,
                         'expected_address': expected_address
@@ -289,10 +404,11 @@ Format your response exactly as shown above with the field names.
                     self.results.append(result_data)
                     
                     # Display results
-                    print(f"   📋 Results for {business_name}:")
-                    print("-" * 50)
+                    print(f"   📋 Enhanced Results for {business_name}:")
+                    print("-" * 60)
                     print(extracted_info)
-                    print("-" * 50)
+                    print("-" * 60)
+                    print(f"   📊 Sources: {govt_sources} govt, {industry_sources} industry, {len(search_results)} total")
                     
                     return result_data
                 else:
@@ -319,7 +435,8 @@ Format your response exactly as shown above with the field names.
             "LOCATION_RELEVANT: UNKNOWN" in extracted_info,
             "CONFIDENCE: 1" in extracted_info or "CONFIDENCE: 2" in extracted_info or "CONFIDENCE: 3" in extracted_info,
             "Not found" in extracted_info and expected_city,
-            "partial" in extracted_info.lower() or "similar" in extracted_info.lower()
+            "partial" in extracted_info.lower() or "similar" in extracted_info.lower(),
+            "GOVERNMENT_VERIFIED: NO" in extracted_info and "gov.in" in results_text
         ]
         
         return any(ambiguous_indicators)
@@ -327,7 +444,7 @@ Format your response exactly as shown above with the field names.
     async def run_second_verification(self, first_result, business_name, results_text, expected_city, expected_address):
         """Run second verification for ambiguous cases"""
         
-        verification_prompt = f"""You are doing a SECOND VERIFICATION of business research results.
+        verification_prompt = f"""You are doing a SECOND VERIFICATION of comprehensive business research results.
 
 BUSINESS: {business_name}
 EXPECTED CITY: {expected_city if expected_city else 'Not provided'}
@@ -336,16 +453,17 @@ EXPECTED ADDRESS: {expected_address if expected_address else 'Not provided'}
 FIRST ANALYSIS RESULT:
 {first_result}
 
-ORIGINAL SEARCH RESULTS:
+ORIGINAL COMPREHENSIVE SEARCH RESULTS:
 {results_text}
 
 SECOND VERIFICATION TASK:
 1. Re-examine if this business is truly related to wood, timber, teak, lumber, plywood industry
 2. Double-check location relevance - is the found city/address close to or matching the expected location?
-3. Look for any missed contact information in the search results
-4. Provide a more definitive assessment
+3. Re-verify government sources presence and official business registration details
+4. Look for any missed contact information or official registrations in the search results
+5. Provide a more definitive assessment with higher confidence
 
-Provide your FINAL VERIFIED result in the same format:
+Provide your FINAL VERIFIED result in the same enhanced format:
 
 BUSINESS_NAME: {business_name}
 INDUSTRY_RELEVANT: [YES/NO after second verification]
@@ -355,11 +473,15 @@ EMAIL: [verified email or "Not found"]
 WEBSITE: [verified website or "Not found"]
 ADDRESS: [verified address or "Not found"]
 CITY: [verified city or "Not found"]
-DESCRIPTION: [verified description of wood/timber activities or "No description available"]
+REGISTRATION_NUMBER: [verified registration/GST number or "Not found"]
+LICENSE_DETAILS: [verified licenses or "Not found"]
+DIRECTORS: [verified directors or "Not found"]
+DESCRIPTION: [verified description of wood/timber activities]
+GOVERNMENT_VERIFIED: [YES/NO after re-checking government sources]
 CONFIDENCE: [rate 1-10 after second verification]
-VERIFICATION_NOTES: [explain your second verification findings and decision]
+VERIFICATION_NOTES: [explain your second verification findings and final decision]
 
-CRITICAL: Be more decisive in your YES/NO determinations after this second look.
+CRITICAL: Be more decisive in your YES/NO determinations after this second comprehensive review.
         """
         
         try:
@@ -372,7 +494,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
                 json={
                     "model": "llama-3.3-70b-versatile",
                     "messages": [{"role": "user", "content": verification_prompt}],
-                    "max_tokens": 1000,
+                    "max_tokens": 1200,
                     "temperature": 0.1
                 },
                 timeout=60
@@ -396,7 +518,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
             return first_result
     
     def create_manual_fallback(self, business_name):
-        """Create fallback result when automated research fails"""
+        """Enhanced fallback with comprehensive government research suggestions"""
         
         fallback_info = f"""
         BUSINESS_NAME: {business_name}
@@ -407,30 +529,53 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
         WEBSITE: Research required  
         ADDRESS: Research required
         CITY: Research required
+        REGISTRATION_NUMBER: Research required
+        LICENSE_DETAILS: Research required
+        DIRECTORS: Research required
         DESCRIPTION: Business - requires manual verification for wood/timber relevance
+        GOVERNMENT_VERIFIED: NO - manual verification needed
         CONFIDENCE: 1
-        RELEVANCE_NOTES: Automated research failed - manual verification needed for industry and location relevance
+        RELEVANCE_NOTES: Automated research failed - comprehensive manual verification needed
 
-        MANUAL RESEARCH NEEDED:
-        1. Verify if business is related to teak, wood, timber, lumber, plywood industry
-        2. Google search: "{business_name}" + "wood" OR "timber" OR "teak" contact information
-        3. Check trade association listings and timber industry directories
-        4. Verify location matches expected city/address from input data
-        5. Look for trade association listings in wood/timber industry
+        COMPREHENSIVE MANUAL RESEARCH NEEDED:
+        
+        Government Sources:
+        1. MCA Portal: https://www.mca.gov.in/ (Company registration details)
+        2. GST Portal: https://gst.gov.in/ (GST registration and verification)
+        3. State Forest Department websites (Timber trading licenses)
+        4. Forest Survey of India: https://fsi.nic.in/ (Forest clearances)
+        5. Central Pollution Control Board (Environmental clearances)
+        6. Shop & Establishment license databases (Local municipal)
+        7. SFAC Portal: https://sfac.in/ (Forest corporation registrations)
+        
+        Industry Sources:
+        8. FIDR: https://fidr.org/ (Forest Industries Directory)
+        9. Timber Traders Association directories (State-wise)
+        10. Export-Import databases (DGFT if applicable)
+        11. Chamber of Commerce member lists (CII, FICCI, ASSOCHAM)
+        12. Plywood Manufacturers Association directories
+        
+        General Sources:
+        13. Google: "{business_name}" + "wood" OR "timber" OR "teak" contact
+        14. Business directories and Yellow Pages
+        15. LinkedIn company profiles for wood/timber businesses
         """
         
         result = {
             'business_name': business_name,
             'extracted_info': fallback_info,
             'raw_search_results': [],
+            'government_sources_found': 0,
+            'industry_sources_found': 0,
+            'total_sources': 0,
             'research_date': datetime.now().isoformat(),
-            'method': 'Manual Fallback',
+            'method': 'Enhanced Manual Fallback',
             'status': 'manual_required'
         }
         
         self.results.append(result)
         
-        print(f"   ⚠️  Manual research required for {business_name}")
+        print(f"   ⚠️  Enhanced manual research required for {business_name}")
         
         return result
     
@@ -446,7 +591,11 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
         WEBSITE: API billing error  
         ADDRESS: API billing error
         CITY: API billing error
+        REGISTRATION_NUMBER: API billing error
+        LICENSE_DETAILS: API billing error
+        DIRECTORS: API billing error
         DESCRIPTION: Research stopped due to API billing/quota issue
+        GOVERNMENT_VERIFIED: NO
         CONFIDENCE: 0
         RELEVANCE_NOTES: Research was stopped due to API billing or quota limits
 
@@ -459,6 +608,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
             'business_name': business_name,
             'extracted_info': billing_info,
             'raw_search_results': [],
+            'government_sources_found': 0,
+            'industry_sources_found': 0,
+            'total_sources': 0,
             'research_date': datetime.now().isoformat(),
             'method': 'Billing Error',
             'status': 'billing_error'
@@ -471,7 +623,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
         return result
     
     async def research_from_dataframe(self, df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=None, enable_justdial=False):
-        """Research businesses from DataFrame with city/address verification"""
+        """Research businesses from DataFrame with enhanced comprehensive search and city/address verification"""
         
         # Extract business names from the specified column
         if consignee_column not in df.columns:
@@ -492,6 +644,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
             address_column = addr_cols[0] if addr_cols else None
         
         print(f"📍 Using columns - Business: {consignee_column}, City: {city_column}, Address: {address_column}")
+        print(f"🎯 Enhanced Strategy: General + Government + Industry sources")
         
         # Get unique business names with their city/address info
         business_data = []
@@ -524,9 +677,11 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
         
         total_businesses = len(business_list)
         print(f"📋 Found {total_businesses} unique businesses to research")
+        print(f"⚠️ Note: Enhanced search takes longer (~45-60 seconds per business)")
         
-        # Research each business with city/address verification
+        # Research each business with comprehensive verification
         successful = 0
+        government_verified = 0
         manual_required = 0
         billing_errors = 0
         
@@ -543,13 +698,15 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
                 print(f"🏠 Expected Address: {expected_address}")
             
             try:
-                # Research with city/address verification
+                # Enhanced research with comprehensive sources
                 result = await self.research_business_direct(
                     business_name, expected_city, expected_address
                 )
                 
                 if result['status'] == 'success':
                     successful += 1
+                    if result.get('government_sources_found', 0) > 0:
+                        government_verified += 1
                 elif result['status'] == 'manual_required':
                     manual_required += 1
                 elif result['status'] == 'billing_error':
@@ -557,8 +714,8 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
                     print("💳 Stopping research due to billing error.")
                     break
                 
-                # Delay between requests
-                await asyncio.sleep(3)
+                # Longer delay for comprehensive search
+                await asyncio.sleep(4)
                 
             except Exception as e:
                 error_str = str(e).lower()
@@ -570,19 +727,21 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
                     print(f"❌ Unexpected error: {e}")
                     manual_required += 1
         
-        # Return summary
+        # Return enhanced summary
         summary = {
             'total_processed': len(self.results),
             'successful': successful,
+            'government_verified': government_verified,
             'manual_required': manual_required,
             'billing_errors': billing_errors,
-            'success_rate': successful/len(self.results)*100 if self.results else 0
+            'success_rate': successful/len(self.results)*100 if self.results else 0,
+            'government_verification_rate': government_verified/len(self.results)*100 if self.results else 0
         }
         
         return summary
     
     def get_results_dataframe(self):
-        """Convert results to DataFrame"""
+        """Convert enhanced results to DataFrame"""
         
         if not self.results:
             return pd.DataFrame()
@@ -595,7 +754,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
         return pd.DataFrame(csv_data)
     
     def save_csv_results(self, filename=None, filter_info=None):
-        """Save research results to CSV file"""
+        """Save enhanced research results to CSV file"""
         
         if not filename:
             if filter_info and filter_info.get('filter_summary'):
@@ -604,19 +763,19 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
                 safe_filter = "".join(c for c in filter_summary if c.isalnum() or c in (' ', '-', '_')).rstrip()
                 safe_filter = safe_filter.replace(' ', '_')[:50]  # Limit length
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"wood_timber_research_{safe_filter}_{timestamp}.csv"
+                filename = f"enhanced_wood_timber_research_{safe_filter}_{timestamp}.csv"
             else:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                filename = f"wood_timber_contacts_{timestamp}.csv"
+                filename = f"enhanced_wood_timber_contacts_{timestamp}.csv"
         
         results_df = self.get_results_dataframe()
         
         # For browser download, return the data instead of saving to disk
-        print(f"📁 Results prepared for download: {filename}")
+        print(f"📁 Enhanced results prepared for download: {filename}")
         return filename, results_df
     
     def parse_extracted_info_to_csv(self, result):
-        """Parse extracted info text into CSV fields"""
+        """Parse enhanced extracted info text into CSV fields"""
         info = result['extracted_info']
         business_name = result['business_name']
         
@@ -629,10 +788,17 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
             'website': self.extract_field_value(info, 'WEBSITE:'),
             'address': self.extract_field_value(info, 'ADDRESS:'),
             'city': self.extract_field_value(info, 'CITY:'),
+            'registration_number': self.extract_field_value(info, 'REGISTRATION_NUMBER:'),
+            'license_details': self.extract_field_value(info, 'LICENSE_DETAILS:'),
+            'directors': self.extract_field_value(info, 'DIRECTORS:'),
             'description': self.extract_field_value(info, 'DESCRIPTION:'),
+            'government_verified': self.extract_field_value(info, 'GOVERNMENT_VERIFIED:'),
             'confidence': self.extract_field_value(info, 'CONFIDENCE:'),
             'relevance_notes': self.extract_field_value(info, 'RELEVANCE_NOTES:') or self.extract_field_value(info, 'VERIFICATION_NOTES:'),
             'status': result['status'],
+            'govt_sources_found': result.get('government_sources_found', 0),
+            'industry_sources_found': result.get('industry_sources_found', 0),
+            'total_sources': result.get('total_sources', 0),
             'research_date': result['research_date'],
             'method': result['method'],
             'expected_city': result.get('expected_city', ''),
@@ -655,7 +821,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second look.
 
 async def research_businesses_from_dataframe(df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=10, enable_justdial=False, filter_info=None):
     """
-    Research wood/timber businesses from a DataFrame with city/address verification
+    Enhanced research of wood/timber businesses from a DataFrame with comprehensive government and industry sources
     
     Args:
         df: pandas DataFrame containing business data
@@ -678,7 +844,7 @@ async def research_businesses_from_dataframe(df, consignee_column='Consignee Nam
         if not api_ok:
             raise Exception(f"API Test Failed: {api_message}")
         
-        # Research businesses with city/address verification
+        # Enhanced research with comprehensive sources and verification
         summary = await researcher.research_from_dataframe(
             df, 
             consignee_column=consignee_column,
@@ -688,10 +854,10 @@ async def research_businesses_from_dataframe(df, consignee_column='Consignee Nam
             enable_justdial=False  # Always disable enhanced features
         )
         
-        # Get results
+        # Get enhanced results
         results_df = researcher.get_results_dataframe()
         
-        # Save to CSV with wood/timber focus
+        # Save to CSV with enhanced format
         csv_filename, results_df = researcher.save_csv_results(filter_info=filter_info)
         
         return results_df, summary, csv_filename
