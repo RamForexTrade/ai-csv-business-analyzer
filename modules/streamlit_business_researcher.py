@@ -102,23 +102,29 @@ class StreamlitBusinessResearcher:
     async def research_business_direct(self, business_name, expected_city=None, expected_address=None):
         """Research business using comprehensive multi-layer strategy"""
         
+        print(f"🔍 Researching: {business_name}")
+        
         try:
             # Multi-layer enhanced search strategy
             all_search_results = []
             
             # Layer 1: General wood/timber business information
+            print("   📊 Layer 1: General business search...")
             general_results = self.search_general_business_info(business_name)
             all_search_results.extend(general_results)
             
             # Layer 2: Government and official sources
+            print("   🏛️ Layer 2: Government sources search...")
             government_results = self.search_government_sources(business_name)
             all_search_results.extend(government_results)
             
             # Layer 3: Industry-specific sources
+            print("   🌲 Layer 3: Timber industry sources...")
             industry_results = self.search_industry_sources(business_name)
             all_search_results.extend(industry_results)
             
             if not all_search_results:
+                print(f"❌ No search results found for {business_name}")
                 return self.create_manual_fallback(business_name)
             
             # Step 2: Extract contact info using Groq AI with comprehensive data and relevance verification
@@ -131,8 +137,10 @@ class StreamlitBusinessResearcher:
         except Exception as e:
             error_str = str(e).lower()
             if "billing" in error_str or "quota" in error_str or "insufficient" in error_str:
+                print(f"💳 API Billing Error for {business_name}: {e}")
                 return self.create_billing_error_result(business_name)
             else:
+                print(f"❌ Error researching {business_name}: {e}")
                 return self.create_manual_fallback(business_name)
     
     def search_general_business_info(self, business_name):
@@ -195,6 +203,8 @@ class StreamlitBusinessResearcher:
         
         for query in queries:
             try:
+                print(f"      📝 {search_type}: {query[:60]}...")
+                
                 # Search with Tavily using preferred domains
                 response = self.tavily_client.search(
                     query=query,
@@ -208,11 +218,15 @@ class StreamlitBusinessResearcher:
                     # Tag results with search type
                     for result in response['results']:
                         result['search_type'] = search_type
-                    all_results.extend(response['results'])  # FIXED: was all_search_results
+                    all_results.extend(response['results'])
+                    print(f"         ✅ Found {len(response['results'])} results")
+                else:
+                    print(f"         ❌ No results")
                     
             except Exception as e:
-                pass  # Continue with other queries
+                print(f"         ⚠️ Error: {str(e)[:50]}")
                 
+        print(f"   📊 {search_type} total: {len(all_results)} results")
         return all_results
     
     def get_preferred_domains(self, search_type):
@@ -272,6 +286,8 @@ class StreamlitBusinessResearcher:
     
     async def extract_contacts_with_groq(self, business_name, search_results, expected_city=None, expected_address=None):
         """Enhanced Groq extraction with government data analysis and city/address verification"""
+        
+        print(f"   🦙 Analyzing {len(search_results)} results with Enhanced Groq...")
         
         # Categorize results by source type
         categorized_results = self.categorize_search_results(search_results)
@@ -354,18 +370,21 @@ Format your response exactly as shown above with the field names.
                     "messages": [{"role": "user", "content": prompt}],
                     "max_tokens": 1200,
                     "temperature": 0.1
-                }
+                },
+                timeout=60
             )
             
             if response.status_code == 200:
                 result = response.json()
                 if result.get('choices') and result['choices'][0].get('message', {}).get('content'):
                     extracted_info = result['choices'][0]['message']['content']
+                    print(f"   ✅ Enhanced Groq extraction completed")
                     
                     # Check if we need second verification
                     needs_verification = await self.check_if_needs_verification(extracted_info, business_name, results_text, expected_city, expected_address)
                     
                     if needs_verification:
+                        print(f"   🔍 Running second verification...")
                         extracted_info = await self.run_second_verification(extracted_info, business_name, results_text, expected_city, expected_address)
                     
                     result_data = {
@@ -383,17 +402,29 @@ Format your response exactly as shown above with the field names.
                     }
                     
                     self.results.append(result_data)
+                    
+                    # Display results
+                    print(f"   📋 Enhanced Results for {business_name}:")
+                    print("-" * 60)
+                    print(extracted_info)
+                    print("-" * 60)
+                    print(f"   📊 Sources: {govt_sources} govt, {industry_sources} industry, {len(search_results)} total")
+                    
                     return result_data
                 else:
+                    print(f"   ❌ Groq returned empty response")
                     return self.create_manual_fallback(business_name)
             else:
+                print(f"   ❌ Groq API error: HTTP {response.status_code} - {response.text}")
                 return self.create_manual_fallback(business_name)
                 
         except Exception as e:
             error_str = str(e).lower()
             if "billing" in error_str or "quota" in error_str or "insufficient" in error_str:
+                print(f"💳 Groq Billing Error: {e}")
                 raise Exception(f"Groq API billing issue: {e}")
             else:
+                print(f"   ❌ Groq extraction error: {e}")
                 return self.create_manual_fallback(business_name)
     
     async def check_if_needs_verification(self, extracted_info, business_name, results_text, expected_city, expected_address):
@@ -465,20 +496,25 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
                     "messages": [{"role": "user", "content": verification_prompt}],
                     "max_tokens": 1200,
                     "temperature": 0.1
-                }
+                },
+                timeout=60
             )
             
             if response.status_code == 200:
                 result = response.json()
                 if result.get('choices') and result['choices'][0].get('message', {}).get('content'):
                     verified_info = result['choices'][0]['message']['content']
+                    print(f"   ✅ Second verification completed")
                     return verified_info
                 else:
+                    print(f"   ❌ Second verification failed, using first result")
                     return first_result
             else:
+                print(f"   ❌ Second verification API error, using first result")
                 return first_result
                 
         except Exception as e:
+            print(f"   ❌ Second verification error: {e}, using first result")
             return first_result
     
     def create_manual_fallback(self, business_name):
@@ -538,6 +574,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         }
         
         self.results.append(result)
+        
+        print(f"   ⚠️  Enhanced manual research required for {business_name}")
+        
         return result
     
     def create_billing_error_result(self, business_name):
@@ -578,6 +617,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         }
         
         self.results.append(result)
+        
+        print(f"   💳 Billing error occurred for {business_name}")
+        
         return result
     
     async def research_from_dataframe(self, df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=None, enable_justdial=False):
@@ -588,6 +630,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
             available_cols = [col for col in df.columns if 'consignee' in col.lower() or 'name' in col.lower()]
             if available_cols:
                 consignee_column = available_cols[0]
+                print(f"⚠️  Column '{consignee_column}' not found. Using '{consignee_column}' instead.")
             else:
                 raise ValueError(f"Column '{consignee_column}' not found in DataFrame. Available columns: {list(df.columns)}")
         
@@ -599,6 +642,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         if not address_column:
             addr_cols = [col for col in df.columns if 'address' in col.lower() or 'consignee.*address' in col.lower()]
             address_column = addr_cols[0] if addr_cols else None
+        
+        print(f"📍 Using columns - Business: {consignee_column}, City: {city_column}, Address: {address_column}")
+        print(f"🎯 Enhanced Strategy: General + Government + Industry sources")
         
         # Get unique business names with their city/address info
         business_data = []
@@ -627,6 +673,11 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         # Limit number of businesses if specified
         if max_businesses and max_businesses < len(business_list):
             business_list = business_list[:max_businesses]
+            print(f"🎯 Limited to first {max_businesses} businesses")
+        
+        total_businesses = len(business_list)
+        print(f"📋 Found {total_businesses} unique businesses to research")
+        print(f"⚠️ Note: Enhanced search takes longer (~45-60 seconds per business)")
         
         # Research each business with comprehensive verification
         successful = 0
@@ -634,10 +685,17 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         manual_required = 0
         billing_errors = 0
         
-        for business_info in business_list:
+        for i, business_info in enumerate(business_list, 1):
             business_name = business_info['name']
             expected_city = business_info['city']
             expected_address = business_info['address']
+            
+            print(f"\n📊 Progress: {i}/{total_businesses}")
+            print(f"🏢 Business: {business_name}")
+            if expected_city:
+                print(f"📍 Expected City: {expected_city}")
+            if expected_address:
+                print(f"🏠 Expected Address: {expected_address}")
             
             try:
                 # Enhanced research with comprehensive sources
@@ -653,17 +711,20 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
                     manual_required += 1
                 elif result['status'] == 'billing_error':
                     billing_errors += 1
+                    print("💳 Stopping research due to billing error.")
                     break
                 
-                # Small delay between requests
-                await asyncio.sleep(3)
+                # Longer delay for comprehensive search
+                await asyncio.sleep(4)
                 
             except Exception as e:
                 error_str = str(e).lower()
                 if "billing" in error_str or "quota" in error_str:
+                    print(f"💳 BILLING ERROR: {e}")
                     billing_errors += 1
                     break
                 else:
+                    print(f"❌ Unexpected error: {e}")
                     manual_required += 1
         
         # Return enhanced summary
@@ -710,6 +771,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         results_df = self.get_results_dataframe()
         
         # For browser download, return the data instead of saving to disk
+        print(f"📁 Enhanced results prepared for download: {filename}")
         return filename, results_df
     
     def parse_extracted_info_to_csv(self, result):
@@ -757,7 +819,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         except:
             return ""
 
-async def research_businesses_from_dataframe(df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=10, enable_justdial=False, filter_info=None, progress_callback=None, status_callback=None):
+async def research_businesses_from_dataframe(df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=10, enable_justdial=False, filter_info=None):
     """
     Enhanced research of wood/timber businesses from a DataFrame with comprehensive government and industry sources
     
@@ -769,8 +831,6 @@ async def research_businesses_from_dataframe(df, consignee_column='Consignee Nam
         max_businesses: maximum number of businesses to research (default 10)
         enable_justdial: ignored (kept for compatibility)
         filter_info: dictionary containing filter information for filename generation
-        progress_callback: function to call with progress updates (ignored - no progress updates)
-        status_callback: function to call with status message updates (ignored - no status updates)
     
     Returns:
         tuple: (results_dataframe, summary_dict, csv_filename)
