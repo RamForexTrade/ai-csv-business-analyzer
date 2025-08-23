@@ -1,6 +1,6 @@
 """
 Enhanced Web Scraping Module with Real-time Progress Updates and Email Integration
-Railway-compatible version with aggressive UI refreshing
+Railway-compatible version with aggressive UI refreshing and Editable Results
 """
 
 import streamlit as st
@@ -145,6 +145,311 @@ class ProgressTracker:
         
         total_time = time.time() - self.start_time
         self.debug_container.success(f"✅ Completed in {total_time:.1f} seconds")
+
+def create_editable_results_interface():
+    """Create an editable interface for research results"""
+    
+    if not st.session_state.get('research_completed', False):
+        return
+    
+    if not st.session_state.get('research_results') is not None:
+        return
+        
+    st.markdown("---")
+    st.subheader("✏️ **Edit Research Results**")
+    
+    # Toggle between view and edit mode
+    col_toggle1, col_toggle2 = st.columns([1, 3])
+    
+    with col_toggle1:
+        edit_mode = st.toggle(
+            "📝 Edit Mode", 
+            value=st.session_state.get('results_edit_mode', False),
+            help="Toggle to enable editing of research results"
+        )
+        st.session_state.results_edit_mode = edit_mode
+    
+    with col_toggle2:
+        if edit_mode:
+            st.info("✏️ Edit mode enabled - you can modify the research results below")
+        else:
+            st.info("👀 View mode - research results are read-only")
+    
+    # Get current results
+    results_df = st.session_state.research_results.copy()
+    
+    if edit_mode:
+        st.markdown("### 📝 **Editable Results Table**")
+        st.markdown("💡 **Instructions:** Click on any cell to edit. Modified cells will be highlighted.")
+        
+        # Create editable interface
+        edited_results = create_editable_business_data(results_df)
+        
+        # Save changes button
+        col_save1, col_save2, col_save3 = st.columns([2, 1, 1])
+        
+        with col_save1:
+            if st.button("💾 Save Changes", type="primary"):
+                # Update the session state with edited results
+                st.session_state.research_results = edited_results
+                
+                # Update the researcher instance results if available
+                if 'researcher_instance' in st.session_state:
+                    researcher = st.session_state.researcher_instance
+                    # Update the internal results of the researcher
+                    update_researcher_results(researcher, edited_results)
+                
+                st.success("✅ Changes saved successfully!")
+                st.balloons()
+                time.sleep(1)
+                st.rerun()
+        
+        with col_save2:
+            if st.button("🔄 Reset"):
+                st.session_state.results_edit_mode = False
+                st.rerun()
+                
+        with col_save3:
+            # Download edited results
+            csv_data = edited_results.to_csv(index=False)
+            st.download_button(
+                label="📥 Download",
+                data=csv_data,
+                file_name=f"edited_research_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        # Show changes summary
+        if not edited_results.equals(results_df):
+            st.markdown("### 📊 **Changes Summary**")
+            changes_detected = show_changes_summary(results_df, edited_results)
+            if changes_detected:
+                st.info(f"📝 {changes_detected} changes detected. Click 'Save Changes' to apply them.")
+    
+    else:
+        # View mode - show results in read-only format
+        st.markdown("### 👀 **Research Results (Read-Only)**")
+        display_results_summary(results_df)
+        st.dataframe(results_df, use_container_width=True, height=400)
+        
+        # Download button for view mode
+        csv_data = results_df.to_csv(index=False)
+        st.download_button(
+            label="📄 Download Results CSV",
+            data=csv_data,
+            file_name=f"research_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+
+def create_editable_business_data(df):
+    """Create editable interface for business data using Streamlit data editor"""
+    
+    # Key editable columns
+    editable_columns = [
+        'business_name', 'email', 'phone', 'website', 'address', 
+        'city', 'description', 'registration_number'
+    ]
+    
+    # Configure column settings for better editing experience
+    column_config = {
+        'business_name': st.column_config.TextColumn(
+            "Business Name",
+            help="Name of the business",
+            max_chars=100,
+        ),
+        'email': st.column_config.TextColumn(
+            "Email Address", 
+            help="Email address for business contact",
+            validate="^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+        ),
+        'phone': st.column_config.TextColumn(
+            "Phone Number",
+            help="Phone number for business contact",
+            max_chars=50,
+        ),
+        'website': st.column_config.LinkColumn(
+            "Website",
+            help="Business website URL",
+            validate="^https?://.*",
+        ),
+        'address': st.column_config.TextColumn(
+            "Address",
+            help="Business address",
+            max_chars=200,
+        ),
+        'city': st.column_config.TextColumn(
+            "City",
+            help="Business city/location",
+            max_chars=50,
+        ),
+        'description': st.column_config.TextColumn(
+            "Description",
+            help="Business description and activities",
+            max_chars=300,
+        ),
+        'registration_number': st.column_config.TextColumn(
+            "Registration #",
+            help="Business registration or GST number",
+            max_chars=50,
+        ),
+        'confidence': st.column_config.NumberColumn(
+            "Confidence",
+            help="Research confidence score (1-10)",
+            min_value=1,
+            max_value=10,
+            step=1,
+            format="%d"
+        ),
+        'government_verified': st.column_config.SelectboxColumn(
+            "Gov Verified",
+            help="Whether verified through government sources",
+            options=['YES', 'NO']
+        ),
+        'industry_relevant': st.column_config.SelectboxColumn(
+            "Industry Relevant", 
+            help="Whether business is relevant to timber/wood industry",
+            options=['YES', 'NO', 'UNKNOWN']
+        ),
+        'location_relevant': st.column_config.SelectboxColumn(
+            "Location Relevant",
+            help="Whether business location matches expected location", 
+            options=['YES', 'NO', 'UNKNOWN']
+        )
+    }
+    
+    # Show editing instructions
+    st.markdown("🔧 **Quick Edit Tips:**")
+    tips_col1, tips_col2 = st.columns(2)
+    
+    with tips_col1:
+        st.markdown("""
+        **📧 Email:** Enter valid email addresses  
+        **📞 Phone:** Use any format (e.g., +91-9876543210)  
+        **🌐 Website:** Include https:// prefix
+        """)
+    
+    with tips_col2:
+        st.markdown("""
+        **📍 Address:** Full business address  
+        **🏢 Registration:** GST or company registration number  
+        **📝 Description:** Brief business description
+        """)
+    
+    # Create the editable data editor
+    edited_df = st.data_editor(
+        df,
+        column_config=column_config,
+        use_container_width=True,
+        num_rows="dynamic",  # Allow adding/removing rows
+        height=500,
+        key="business_data_editor"
+    )
+    
+    return edited_df
+
+def display_results_summary(df):
+    """Display summary statistics for results"""
+    
+    total_businesses = len(df)
+    businesses_with_emails = len(df[df['email'].notna() & (df['email'] != '') & (df['email'] != 'Not found')])
+    businesses_with_phones = len(df[df['phone'].notna() & (df['phone'] != '') & (df['phone'] != 'Not found')])
+    businesses_with_websites = len(df[df['website'].notna() & (df['website'] != '') & (df['website'] != 'Not found')])
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        st.metric("Total Businesses", total_businesses)
+    with col2:
+        st.metric("📧 With Emails", businesses_with_emails)  
+    with col3:
+        st.metric("📞 With Phones", businesses_with_phones)
+    with col4:
+        st.metric("🌐 With Websites", businesses_with_websites)
+
+def show_changes_summary(original_df, edited_df):
+    """Show summary of changes made to the data"""
+    
+    changes_count = 0
+    
+    try:
+        # Compare dataframes and count changes
+        if original_df.shape != edited_df.shape:
+            changes_count += abs(original_df.shape[0] - edited_df.shape[0])
+            st.info(f"📊 Row count changed: {original_df.shape[0]} → {edited_df.shape[0]}")
+        
+        # Check for cell-level changes in common rows
+        common_rows = min(len(original_df), len(edited_df))
+        
+        for idx in range(common_rows):
+            for col in original_df.columns:
+                if col in edited_df.columns:
+                    orig_val = str(original_df.iloc[idx][col]) if pd.notna(original_df.iloc[idx][col]) else ""
+                    edit_val = str(edited_df.iloc[idx][col]) if pd.notna(edited_df.iloc[idx][col]) else ""
+                    
+                    if orig_val != edit_val:
+                        changes_count += 1
+                        
+                        # Show specific change details for key fields
+                        if col in ['email', 'phone', 'website'] and changes_count <= 5:
+                            business_name = edited_df.iloc[idx].get('business_name', f'Row {idx+1}')
+                            st.write(f"📝 **{business_name}** - {col}: `{orig_val}` → `{edit_val}`")
+        
+        if changes_count > 5:
+            st.write(f"... and {changes_count - 5} more changes")
+            
+    except Exception as e:
+        st.warning(f"Could not compare changes: {str(e)}")
+        changes_count = 1  # Assume changes were made
+    
+    return changes_count
+
+def update_researcher_results(researcher, edited_df):
+    """Update the researcher instance with edited results"""
+    
+    try:
+        # Convert edited dataframe back to researcher's internal format
+        updated_results = []
+        
+        for idx, row in edited_df.iterrows():
+            # Create a result entry in the researcher's format
+            result_entry = {
+                'business_name': row.get('business_name', ''),
+                'status': 'success' if row.get('email', '') not in ['', 'Not found', 'Research required'] else 'manual_required',
+                'government_sources_found': 1 if row.get('government_verified', 'NO') == 'YES' else 0,
+                'industry_sources_found': 0,
+                'total_sources': 1,
+                'research_date': datetime.now().isoformat(),
+                'method': 'Manual Edit',
+                'extracted_info': create_extracted_info_from_row(row)
+            }
+            updated_results.append(result_entry)
+        
+        # Update the researcher's results
+        researcher.results = updated_results
+        
+    except Exception as e:
+        st.warning(f"Could not update researcher results: {str(e)}")
+
+def create_extracted_info_from_row(row):
+    """Create extracted info string from dataframe row for researcher compatibility"""
+    
+    return f"""
+BUSINESS_NAME: {row.get('business_name', '')}
+INDUSTRY_RELEVANT: {row.get('industry_relevant', 'YES')}
+LOCATION_RELEVANT: {row.get('location_relevant', 'YES')}
+PHONE: {row.get('phone', 'Not found')}
+EMAIL: {row.get('email', 'Not found')}
+WEBSITE: {row.get('website', 'Not found')}
+ADDRESS: {row.get('address', 'Not found')}
+CITY: {row.get('city', 'Not found')}
+REGISTRATION_NUMBER: {row.get('registration_number', 'Not found')}
+LICENSE_DETAILS: {row.get('license_details', 'Not found')}
+DIRECTORS: {row.get('directors', 'Not found')}
+DESCRIPTION: {row.get('description', 'Business activities')}
+GOVERNMENT_VERIFIED: {row.get('government_verified', 'NO')}
+CONFIDENCE: {row.get('confidence', '5')}
+RELEVANCE_NOTES: Manual edit - {datetime.now().strftime('%Y-%m-%d %H:%M')}
+"""
 
 def perform_web_scraping(filtered_df):
     """Enhanced web scraping with real-time progress updates and email integration"""
@@ -479,32 +784,21 @@ def perform_web_scraping(filtered_df):
                 with col_sum4:
                     st.metric("Success Rate", f"{summary['success_rate']:.1f}%")
 
-                # Display results
-                st.dataframe(results_df, use_container_width=True, height=400)
-
-                # Download option
-                csv_data = results_df.to_csv(index=False)
-                st.download_button(
-                    label="📄 Download Results CSV",
-                    data=csv_data,
-                    file_name=f"research_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
-
                 # Store research results and researcher instance in session state for email functionality
                 st.session_state.research_completed = True
                 st.session_state.researcher_instance = researcher
                 st.session_state.research_results = results_df
                 st.session_state.research_summary = summary
+                st.session_state.results_edit_mode = False  # Start in view mode
 
                 st.balloons()
                 
                 # Show success message with email information
                 businesses_with_emails = researcher.get_businesses_with_emails()
                 if len(businesses_with_emails) > 0:
-                    st.success(f"🎉 Research completed! Found email addresses for {len(businesses_with_emails)} businesses. Email sending options are now available below.")
+                    st.success(f"🎉 Research completed! Found email addresses for {len(businesses_with_emails)} businesses. You can now edit the results and send emails.")
                 else:
-                    st.info("ℹ️ Research completed! No email addresses were found in the results.")
+                    st.info("ℹ️ Research completed! No email addresses were found in the results. You can manually add them using the edit feature below.")
                 
             else:
                 st.warning("⚠️ Research completed but no results were found.")
@@ -515,3 +809,6 @@ def perform_web_scraping(filtered_df):
             
             with st.expander("🔍 Technical Details"):
                 st.code(str(e))
+    
+    # Show editable results interface if research is completed
+    create_editable_results_interface()
