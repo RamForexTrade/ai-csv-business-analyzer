@@ -196,9 +196,85 @@ def create_editable_results_interface():
     # Get current results
     results_df = st.session_state.research_results.copy()
     
+    # Initialize email selection state if not exists
+    if 'selected_for_email' not in st.session_state:
+        # Default: select businesses that have email addresses
+        has_email = (results_df['email'].notna() & 
+                    (results_df['email'] != '') & 
+                    (results_df['email'] != 'Not found') &
+                    (results_df['email'] != 'Research required') &
+                    (~results_df['email'].str.contains('not relevant', case=False, na=False)))
+        st.session_state.selected_for_email = has_email.tolist()
+    
+    # Ensure selection list matches current dataframe length
+    if len(st.session_state.selected_for_email) != len(results_df):
+        # Resize selection list to match dataframe
+        current_length = len(st.session_state.selected_for_email)
+        df_length = len(results_df)
+        
+        if df_length > current_length:
+            # Extend with False for new rows
+            st.session_state.selected_for_email.extend([False] * (df_length - current_length))
+        else:
+            # Truncate if dataframe is smaller
+            st.session_state.selected_for_email = st.session_state.selected_for_email[:df_length]
+    
     if edit_mode:
+        # Email Selection Controls
+        st.markdown("### 📧 **Email Selection Controls**")
+        
+        # Count selected businesses and those with emails
+        total_selected = sum(st.session_state.selected_for_email)
+        businesses_with_emails = sum([
+            selected and 
+            pd.notna(results_df.iloc[i]['email']) and 
+            results_df.iloc[i]['email'] not in ['', 'Not found', 'Research required'] and
+            'not relevant' not in str(results_df.iloc[i]['email']).lower()
+            for i, selected in enumerate(st.session_state.selected_for_email)
+        ])
+        
+        # Selection summary and controls
+        col_sel1, col_sel2, col_sel3, col_sel4 = st.columns(4)
+        
+        with col_sel1:
+            st.metric("📧 Selected for Email", total_selected)
+        
+        with col_sel2:
+            st.metric("✅ With Valid Emails", businesses_with_emails)
+        
+        with col_sel3:
+            if st.button("☑️ Select All", key="select_all_email"):
+                st.session_state.selected_for_email = [True] * len(results_df)
+                st.rerun()
+        
+        with col_sel4:
+            if st.button("☐ Clear All", key="clear_all_email"):
+                st.session_state.selected_for_email = [False] * len(results_df)
+                st.rerun()
+        
+        # Quick selection buttons
+        col_quick1, col_quick2 = st.columns(2)
+        
+        with col_quick1:
+            if st.button("📧 Select Only With Emails", key="select_with_emails"):
+                st.session_state.selected_for_email = [
+                    pd.notna(row['email']) and 
+                    row['email'] not in ['', 'Not found', 'Research required'] and
+                    'not relevant' not in str(row['email']).lower()
+                    for _, row in results_df.iterrows()
+                ]
+                st.rerun()
+        
+        with col_quick2:
+            if st.button("🏛️ Select Gov Verified", key="select_gov_verified"):
+                st.session_state.selected_for_email = [
+                    row.get('government_verified', 'NO') == 'YES'
+                    for _, row in results_df.iterrows()
+                ]
+                st.rerun()
+        
         st.markdown("### 📝 **Editable Results Table**")
-        st.markdown("💡 **Instructions:** Click on any cell to edit. Modified cells will be highlighted.")
+        st.markdown("💡 **Instructions:** Click on any cell to edit. Use checkboxes to select businesses for email campaigns.")
         
         # Create editable interface
         edited_results = create_editable_business_data(results_df)
@@ -262,31 +338,129 @@ def create_editable_results_interface():
                 st.info(f"📝 {changes_detected} changes detected. Click 'Save Changes' to apply them.")
     
     else:
-        # View mode - show results in read-only format
+        # View mode - show results in read-only format  
         st.markdown("### 👀 **Research Results (Read-Only)**")
-        display_results_summary(results_df)
-        st.dataframe(results_df, use_container_width=True, height=400)
         
-        # Download button for view mode
-        csv_data = results_df.to_csv(index=False)
-        st.download_button(
-            label="📄 Download Results CSV",
-            data=csv_data,
-            file_name=f"research_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
+        # Show email selection summary in view mode
+        if 'selected_for_email' in st.session_state:
+            total_selected = sum(st.session_state.selected_for_email)
+            businesses_with_emails = sum([
+                selected and 
+                pd.notna(results_df.iloc[i]['email']) and 
+                results_df.iloc[i]['email'] not in ['', 'Not found', 'Research required'] and
+                'not relevant' not in str(results_df.iloc[i]['email']).lower()
+                for i, selected in enumerate(st.session_state.selected_for_email) if i < len(results_df)
+            ])
+            
+            # Quick selection controls in view mode
+            col_view1, col_view2, col_view3, col_view4 = st.columns(4)
+            
+            with col_view1:
+                st.metric("📧 Selected", total_selected)
+            
+            with col_view2:
+                st.metric("✅ With Emails", businesses_with_emails)
+            
+            with col_view3:
+                if st.button("📧 Quick: Select All with Emails", key="quick_select_emails_view"):
+                    st.session_state.selected_for_email = [
+                        pd.notna(row['email']) and 
+                        row['email'] not in ['', 'Not found', 'Research required'] and
+                        'not relevant' not in str(row['email']).lower()
+                        for _, row in results_df.iterrows()
+                    ]
+                    st.rerun()
+            
+            with col_view4:
+                if st.button("☐ Quick: Clear All", key="quick_clear_all_view"):
+                    st.session_state.selected_for_email = [False] * len(results_df)
+                    st.rerun()
+            
+            if total_selected > 0:
+                st.success(f"👍 **Ready for Email Campaign:** {businesses_with_emails} businesses with emails selected (out of {total_selected} total)")
+            else:
+                st.info("💡 **Tip:** Use 'Quick: Select All with Emails' above or Edit Mode to select businesses for email campaigns.")
+        
+        else:
+            st.info("📧 **Email Selection:** No selection data available. Complete business research first.")
+            # Show basic metrics without selection functionality
+            total_with_emails = sum([
+                pd.notna(row['email']) and 
+                row['email'] not in ['', 'Not found', 'Research required'] and
+                'not relevant' not in str(row['email']).lower()
+                for _, row in results_df.iterrows()
+            ])
+            
+            if total_with_emails > 0:
+                st.info(f"📧 **Available for Email:** {total_with_emails} businesses have email addresses")
+                if st.button("🔄 Initialize Email Selection", key="init_email_selection"):
+                    # Initialize selection with businesses that have emails
+                    st.session_state.selected_for_email = [
+                        pd.notna(row['email']) and 
+                        row['email'] not in ['', 'Not found', 'Research required'] and
+                        'not relevant' not in str(row['email']).lower()
+                        for _, row in results_df.iterrows()
+                    ]
+                    st.rerun()
+        
+        display_results_summary(results_df)
+        
+        # Add selection indicators to the dataframe display
+        if 'selected_for_email' in st.session_state and len(st.session_state.selected_for_email) == len(results_df):
+            # Add selection column for display
+            display_df = results_df.copy()
+            display_df.insert(0, '📧 Selected', ['☑️ Yes' if selected else '☐ No' for selected in st.session_state.selected_for_email])
+            st.dataframe(display_df, use_container_width=True, height=400)
+        else:
+            st.dataframe(results_df, use_container_width=True, height=400)
+        
+        # Download options in view mode
+        col_download1, col_download2 = st.columns(2)
+        
+        with col_download1:
+            # Download all results
+            csv_data = results_df.to_csv(index=False)
+            st.download_button(
+                label="📄 Download All Results",
+                data=csv_data,
+                file_name=f"research_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        
+        with col_download2:
+            # Download only selected businesses
+            if 'selected_for_email' in st.session_state and any(st.session_state.selected_for_email):
+                selected_results = results_df[st.session_state.selected_for_email]
+                selected_csv = selected_results.to_csv(index=False)
+                st.download_button(
+                    label=f"📧 Download Selected ({sum(st.session_state.selected_for_email)})",
+                    data=selected_csv,
+                    file_name=f"selected_businesses_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
+            else:
+                st.button("📧 Download Selected (0)", disabled=True, help="No businesses selected")
 
 def create_editable_business_data(df):
     """Create editable interface for business data using Streamlit data editor"""
     
+    # Add email selection column to dataframe
+    df_with_selection = df.copy()
+    df_with_selection.insert(0, 'send_email', st.session_state.selected_for_email)
+    
     # Key editable columns
     editable_columns = [
-        'business_name', 'email', 'phone', 'website', 'address', 
+        'send_email', 'business_name', 'email', 'phone', 'website', 'address', 
         'city', 'description', 'registration_number'
     ]
     
     # Configure column settings for better editing experience
     column_config = {
+        'send_email': st.column_config.CheckboxColumn(
+            "📧 Send Email",
+            help="Select businesses to include in email campaign",
+            default=False,
+        ),
         'business_name': st.column_config.TextColumn(
             "Business Name",
             help="Name of the business",
@@ -371,14 +545,21 @@ def create_editable_business_data(df):
         """)
     
     # Create the editable data editor
-    edited_df = st.data_editor(
-        df,
+    edited_df_with_selection = st.data_editor(
+        df_with_selection,
         column_config=column_config,
         use_container_width=True,
         num_rows="dynamic",  # Allow adding/removing rows
         height=500,
         key="business_data_editor"
     )
+    
+    # Update email selection state from the editor
+    if 'send_email' in edited_df_with_selection.columns:
+        st.session_state.selected_for_email = edited_df_with_selection['send_email'].tolist()
+    
+    # Remove the send_email column before returning the business data
+    edited_df = edited_df_with_selection.drop(columns=['send_email'], errors='ignore')
     
     return edited_df
 
