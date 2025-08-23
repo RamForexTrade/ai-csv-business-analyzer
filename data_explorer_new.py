@@ -231,36 +231,74 @@ def show_email_sending_section():
         # Check if businesses with emails are available
         researcher = st.session_state.get('researcher_instance')
         if researcher:
-            businesses_with_emails = researcher.get_businesses_with_emails()
+            # Get all businesses with emails
+            all_businesses_with_emails = researcher.get_businesses_with_emails()
             
-            if len(businesses_with_emails) > 0:
-                st.success(f"📧 Found {len(businesses_with_emails)} businesses with email addresses!")
+            # Get selected businesses for email
+            selected_for_email = st.session_state.get('selected_for_email', [])
+            research_results = st.session_state.get('research_results', pd.DataFrame())
+            
+            # Filter to get only selected businesses that also have emails
+            if len(selected_for_email) == len(research_results):
+                selected_businesses_with_emails = research_results[
+                    [selected_for_email[i] and 
+                     pd.notna(research_results.iloc[i]['email']) and 
+                     research_results.iloc[i]['email'] not in ['', 'Not found', 'Research required'] and
+                     'not relevant' not in str(research_results.iloc[i]['email']).lower()
+                     for i in range(len(research_results))]
+                ]
+            else:
+                # Fallback to all businesses with emails if selection is not available
+                selected_businesses_with_emails = all_businesses_with_emails
+            
+            total_with_emails = len(all_businesses_with_emails)
+            selected_with_emails = len(selected_businesses_with_emails)
+            
+            if total_with_emails > 0:
+                if selected_with_emails > 0:
+                    st.success(f"📧 Ready to send emails to {selected_with_emails} selected businesses (out of {total_with_emails} total with emails)!")
+                else:
+                    st.warning(f"📧 Found {total_with_emails} businesses with emails, but none are selected for email campaigns.")
+                    st.info("💡 **Tip:** Go to Edit Mode above to select businesses for email campaigns.")
                 
-                # Show email configuration and template selection
-                col_e1, col_e2 = st.columns(2)
+                # Show selection summary
+                col_summary1, col_summary2 = st.columns(2)
+                with col_summary1:
+                    st.metric("📧 Selected for Email", selected_with_emails)
+                with col_summary2:
+                    if selected_with_emails < total_with_emails:
+                        if st.button("📄 View All Email Businesses", key="view_all_email_biz"):
+                            with st.expander("All Businesses with Emails", expanded=True):
+                                st.dataframe(all_businesses_with_emails[['business_name', 'email', 'phone', 'website']], use_container_width=True)
                 
-                with col_e1:
-                    email_template = st.selectbox(
-                        "📝 Email Template:",
-                        ["business_intro", "supplier_inquiry", "networking"],
-                        format_func=lambda x: {
-                            "business_intro": "🤝 Business Introduction",
-                            "supplier_inquiry": "📦 Supplier Inquiry", 
-                            "networking": "🌐 Industry Networking"
-                        }[x]
-                    )
+                if selected_with_emails > 0:
+                    # Show email configuration and template selection
+                    col_e1, col_e2 = st.columns(2)
                 
-                with col_e2:
-                    delay_seconds = st.number_input(
-                        "⏱️ Delay between emails (seconds):",
-                        min_value=1, max_value=10, value=3,
-                        help="Recommended: 2-3 seconds to avoid spam detection"
-                    )
+
                 
-                # NEW: Email Preview and Edit Section
-                st.markdown("---")
-                st.subheader("✉️ Email Preview & Edit")
-                st.info("📝 Review and customize your email before sending to all businesses")
+                    with col_e1:
+                        email_template = st.selectbox(
+                            "📝 Email Template:",
+                            ["business_intro", "supplier_inquiry", "networking"],
+                            format_func=lambda x: {
+                                "business_intro": "🤝 Business Introduction",
+                                "supplier_inquiry": "📦 Supplier Inquiry", 
+                                "networking": "🌐 Industry Networking"
+                            }[x]
+                        )
+                    
+                    with col_e2:
+                        delay_seconds = st.number_input(
+                            "⏱️ Delay between emails (seconds):",
+                            min_value=1, max_value=10, value=3,
+                            help="Recommended: 2-3 seconds to avoid spam detection"
+                        )
+                    
+                    # NEW: Email Preview and Edit Section
+                    st.markdown("---")
+                    st.subheader("✉️ Email Preview & Edit")
+                    st.info(f"📝 Review and customize your email before sending to {selected_with_emails} selected businesses")
                 
                 # Load default email templates for preview
                 if 'email_templates_loaded' not in st.session_state:
@@ -305,16 +343,18 @@ def show_email_sending_section():
                         help="Name that will appear as sender"
                     )
                 
-                with col_addr2:
-                    st.markdown("**📥 To Email Addresses:**")
-                    st.info(f"Will send to {len(businesses_with_emails)} businesses with emails")
-                    
-                    # Show first few email addresses as preview
-                    sample_emails = businesses_with_emails['email'].head(3).tolist()
-                    for i, email in enumerate(sample_emails, 1):
-                        st.text(f"{i}. {email}")
-                    if len(businesses_with_emails) > 3:
-                        st.text(f"... and {len(businesses_with_emails) - 3} more")
+                    with col_addr2:
+                        st.markdown("**📥 To Email Addresses:**")
+                        st.info(f"Will send to {selected_with_emails} selected businesses with emails")
+                        
+                        # Show first few email addresses as preview from selected businesses
+                        if len(selected_businesses_with_emails) > 0:
+                            sample_emails = selected_businesses_with_emails['email'].head(3).tolist()
+                            for i, email in enumerate(sample_emails, 1):
+                                business_name = selected_businesses_with_emails.iloc[i-1]['business_name']
+                                st.text(f"{i}. {email} ({business_name})")
+                            if len(selected_businesses_with_emails) > 3:
+                                st.text(f"... and {len(selected_businesses_with_emails) - 3} more selected businesses")
                 
                 # Email Content Preview and Editing
                 st.markdown("### 📝 Email Content")
@@ -393,44 +433,47 @@ def show_email_sending_section():
                 col_send1, col_send2, col_send3 = st.columns([2, 1, 1])
                 
                 with col_send1:
-                    send_emails_button = st.button(
-                        "📧 Send Emails to All Businesses", 
-                        type="primary",
-                        help=f"Send customized email to {len(businesses_with_emails)} businesses"
-                    )
+                        send_emails_button = st.button(
+                            "📧 Send Emails to Selected Businesses", 
+                            type="primary",
+                            help=f"Send customized email to {selected_with_emails} selected businesses"
+                        )
                 
-                with col_send2:
-                    st.metric("📧 Ready to Send", len(businesses_with_emails))
+                        with col_send2:
+                            st.metric("📧 Ready to Send", selected_with_emails)
                 
                 with col_send3:
                     if st.button("📝 Reset to Template"):
                         st.rerun()
                 
-                # Process email sending with custom content
-                if send_emails_button:
-                    if not from_email or not sender_name:
-                        st.error("❌ Please provide both sender email and name")
-                    elif EMAIL_CONFIG:
-                        send_customized_emails_to_businesses(
-                            researcher, 
-                            businesses_with_emails, 
-                            email_template,
-                            edited_subject,
-                            edited_body,
-                            email_variables,
-                            from_email,
-                            sender_name,
-                            delay_seconds
-                        )
-                    else:
-                        st.error("❌ Email configuration not found. Please check email_config.py")
+                    # Process email sending with custom content
+                    if send_emails_button:
+                        if not from_email or not sender_name:
+                            st.error("❌ Please provide both sender email and name")
+                        elif EMAIL_CONFIG:
+                            send_customized_emails_to_businesses(
+                                researcher, 
+                                selected_businesses_with_emails, 
+                                email_template,
+                                edited_subject,
+                                edited_body,
+                                email_variables,
+                                from_email,
+                                sender_name,
+                                delay_seconds
+                            )
+                        else:
+                            st.error("❌ Email configuration not found. Please check email_config.py")
                 
-                # Show preview of businesses with emails
-                with st.expander("👀 Preview Businesses with Emails"):
-                    preview_df = businesses_with_emails[['business_name', 'email', 'phone', 'website']].head(10)
-                    st.dataframe(preview_df, use_container_width=True)
-                    if len(businesses_with_emails) > 10:
-                        st.caption(f"Showing first 10 of {len(businesses_with_emails)} businesses")
+                    # Show preview of selected businesses with emails
+                    with st.expander("👀 Preview Selected Businesses for Email"):
+                        if len(selected_businesses_with_emails) > 0:
+                            preview_df = selected_businesses_with_emails[['business_name', 'email', 'phone', 'website']].head(10)
+                            st.dataframe(preview_df, use_container_width=True)
+                            if len(selected_businesses_with_emails) > 10:
+                                st.caption(f"Showing first 10 of {selected_with_emails} selected businesses")
+                        else:
+                            st.info("No businesses selected for email campaign.")
             
             else:
                 st.warning("📧 No email addresses found in research results.")
