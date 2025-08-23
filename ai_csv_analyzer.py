@@ -392,33 +392,33 @@ COLUMN TYPES:"""
 
         for col, dtype in self.data_summary['column_types'].items():
             col_type = "identifier" if col in self.identifier_columns else dtype
-            context += f"\\n- {col}: {col_type}"
+            context += f"\n- {col}: {col_type}"
 
         # Identifier columns summary
         if self.data_summary['identifier_summary']:
-            context += "\\n\\nIDENTIFIER COLUMNS (HS Codes, Product Codes, etc.):"
+            context += "\n\nIDENTIFIER COLUMNS (HS Codes, Product Codes, etc.):"
             for col, stats in self.data_summary['identifier_summary'].items():
-                context += f"\\n- {col}: {stats['unique_count']} unique values, most common: '{stats['most_common']}'"
-                context += f"\\n  Sample values: {', '.join(map(str, stats['sample_values'][:3]))}"
+                context += f"\n- {col}: {stats['unique_count']} unique values, most common: '{stats['most_common']}'"
+                context += f"\n  Sample values: {', '.join(map(str, stats['sample_values'][:3]))}"
 
-        context += "\\n\\nNUMERIC COLUMNS SUMMARY:"
+        context += "\n\nNUMERIC COLUMNS SUMMARY:"
         for col, stats in self.data_summary['numeric_summary'].items():
-            context += f"\\n- {col}: min={stats['min']:.2f}, max={stats['max']:.2f}, mean={stats['mean']:.2f}, unique={stats['unique_count']}"
+            context += f"\n- {col}: min={stats['min']:.2f}, max={stats['max']:.2f}, mean={stats['mean']:.2f}, unique={stats['unique_count']}"
 
-        context += "\\n\\nCATEGORICAL COLUMNS SUMMARY:"
+        context += "\n\nCATEGORICAL COLUMNS SUMMARY:"
         for col, stats in self.data_summary['categorical_summary'].items():
             top_value = list(stats['top_values'].keys())[0] if stats['top_values'] else 'N/A'
-            context += f"\\n- {col}: {stats['unique_count']} unique values, most common: '{top_value}'"
+            context += f"\n- {col}: {stats['unique_count']} unique values, most common: '{top_value}'"
 
-        context += "\\n\\nSAMPLE DATA (first 3 rows):"
+        context += "\n\nSAMPLE DATA (first 3 rows):"
         for i, row in enumerate(self.data_summary['sample_data']):
-            context += f"\\nRow {i+1}: {row}"
+            context += f"\nRow {i+1}: {row}"
 
         if any(keyword in question.lower() for keyword in ['trend', 'time', 'date', 'change']):
-            context += "\\n\\nDATE/TIME INSIGHTS:"
+            context += "\n\nDATE/TIME INSIGHTS:"
             for key, info in self.data_summary['data_insights'].items():
                 if 'date_range' in key:
-                    context += f"\\n- {key}: {info['earliest']} to {info['latest']} ({info['span_days']} days)"
+                    context += f"\n- {key}: {info['earliest']} to {info['latest']} ({info['span_days']} days)"
 
         return context
 
@@ -531,7 +531,7 @@ Provide specific insights based on the data shown above. Note that identifier co
                                 col_raw, op, val_raw = m.group(1).strip(), m.group(2).strip(), m.group(3).strip()
                                 col = resolve_col(col_raw)
                                 if col:
-                                    val = val_raw.strip().strip('\'"')
+                                    val = val_raw.strip().strip('\'\"//')
                                     try:
                                         if isinstance(val, str) and val.lower() in ("true", "false"):
                                             v = True if val.lower() == "true" else False
@@ -562,7 +562,7 @@ Provide specific insights based on the data shown above. Note that identifier co
                     col = resolve_col(col_raw)
                     if not col:
                         continue
-                    val = val_raw.strip().strip('\'"')
+                    val = val_raw.strip().strip('\'\"//')
                     try:
                         if isinstance(val, str) and val.lower() in ("true", "false"):
                             v = True if val.lower() == "true" else False
@@ -694,9 +694,9 @@ Provide specific insights based on the data shown above. Note that identifier co
             if ("filter" in q or "include only" in q) and clauses and len(clauses) > 0:
                 # Show filtered results
                 if len(df_work) <= 50:
-                    return True, f"Filtered results ({len(df_work)} rows):\\n\\n{safe_to_markdown(df_work)}"
+                    return True, f"Filtered results ({len(df_work)} rows):\n\n{safe_to_markdown(df_work)}"
                 else:
-                    return True, f"Filtered results ({len(df_work)} rows, showing first 20):\\n\\n{safe_to_markdown(df_work.head(20))}"
+                    return True, f"Filtered results ({len(df_work)} rows, showing first 20):\n\n{safe_to_markdown(df_work.head(20))}"
 
             # Simple "show me" queries
             if any(phrase in q for phrase in ["show me", "list", "display"]) and not any(t in q for t in ["filter", "where", "group", "sum", "count"]):
@@ -897,7 +897,7 @@ def create_ai_chat_section(df, identifier_cols):
 
         for chat in reversed(st.session_state.chat_history[-3:]):  # Show last 3
             # Process the answer to replace newlines with HTML breaks
-            processed_answer = chat['answer'].replace('\\n', '<br>')
+            processed_answer = chat['answer'].replace('\n', '<br>')
 
             st.markdown(f"""
             <div class="user-message">

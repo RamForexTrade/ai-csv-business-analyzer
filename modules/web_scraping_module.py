@@ -151,9 +151,27 @@ def create_editable_results_interface():
     
     if not st.session_state.get('research_completed', False):
         return
-    
+
     if not st.session_state.get('research_results') is not None:
         return
+        
+    # Show success message if changes were saved recently
+    if st.session_state.get('changes_saved', False):
+        st.success("✅ Your changes have been saved successfully and applied!")
+        # Clear the success flag after displaying
+        del st.session_state['changes_saved']
+        
+    # Handle post-save state
+    if st.session_state.get('just_saved', False):
+        st.info("🎉 Save completed! You are now viewing the updated results.")
+        # Clear the just_saved flag
+        del st.session_state['just_saved']
+        
+    # Handle reset state
+    if st.session_state.get('reset_clicked', False):
+        st.info("🔄 Edit mode reset - back to read-only view.")
+        # Clear the reset flag
+        del st.session_state['reset_clicked']
         
     st.markdown("---")
     st.subheader("✏️ **Edit Research Results**")
@@ -189,7 +207,9 @@ def create_editable_results_interface():
         col_save1, col_save2, col_save3 = st.columns([2, 1, 1])
         
         with col_save1:
-            if st.button("💾 Save Changes", type="primary"):
+            save_clicked = st.button("💾 Save Changes", type="primary", key="save_changes_btn")
+            
+            if save_clicked:
                 # Update the session state with edited results
                 st.session_state.research_results = edited_results
                 
@@ -199,14 +219,29 @@ def create_editable_results_interface():
                     # Update the internal results of the researcher
                     update_researcher_results(researcher, edited_results)
                 
+                # Set flags for post-save state
+                st.session_state.changes_saved = True
+                st.session_state.results_edit_mode = False
+                st.session_state.just_saved = True
+                
+                # Show immediate success message
                 st.success("✅ Changes saved successfully!")
                 st.balloons()
-                time.sleep(1)
+                
+                # Let the user know the changes are saved and they should refresh manually if needed
+                st.info("🔄 Changes saved! The interface will update shortly.")
+                
+                # Use a lighter refresh approach
+                time.sleep(1.5)
                 st.rerun()
         
         with col_save2:
-            if st.button("🔄 Reset"):
+            reset_clicked = st.button("🔄 Reset", key="reset_changes_btn")
+            if reset_clicked:
                 st.session_state.results_edit_mode = False
+                st.session_state.reset_clicked = True
+                st.info("🔄 Reset completed - returning to view mode.")
+                time.sleep(1)
                 st.rerun()
                 
         with col_save3:
