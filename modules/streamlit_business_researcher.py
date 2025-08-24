@@ -1,5 +1,6 @@
 """
 Enhanced Streamlit Business Researcher with Government Sources and Email Integration
+Now includes Research Status Tracking to avoid duplicate research
 Includes specific searches for government business databases and official registrations
 Focused on teak, wood, timber, lumber businesses with city/address verification
 Integrated with Business Email Module for curated outreach
@@ -38,7 +39,9 @@ class StreamlitBusinessResearcher:
         # Initialize email module
         self.emailer = BusinessEmailer()
         
+        # Research results and status tracking
         self.results = []
+        self.research_status_cache = {}  # Track research status to avoid duplicates
     
     def configure_email(self, email_provider='gmail', email_address=None, email_password=None, sender_name=None):
         """Configure email settings for sending curated emails"""
@@ -93,6 +96,73 @@ class StreamlitBusinessResearcher:
     def get_email_templates(self):
         """Get available email templates"""
         return self.emailer.get_default_templates()
+    
+    def is_already_researched(self, business_name):
+        """Check if a business has already been researched"""
+        normalized_name = str(business_name).strip().lower()
+        return normalized_name in self.research_status_cache
+    
+    def mark_as_researched(self, business_name, status='completed'):
+        """Mark a business as researched with given status"""
+        normalized_name = str(business_name).strip().lower()
+        self.research_status_cache[normalized_name] = {
+            'status': status,
+            'timestamp': datetime.now().isoformat(),
+            'business_name': business_name  # Keep original name
+        }
+    
+    def get_research_status(self, business_name):
+        """Get research status for a business"""
+        normalized_name = str(business_name).strip().lower()
+        return self.research_status_cache.get(normalized_name, {'status': 'not_researched'})
+    
+    def load_research_cache_from_dataframe(self, df, business_column='business_name', status_column='research_status'):
+        """Load research status cache from existing research results DataFrame"""
+        if business_column not in df.columns:
+            return
+            
+        # If no status column exists, we'll add it
+        if status_column not in df.columns:
+            df[status_column] = 'not_researched'
+        
+        for _, row in df.iterrows():
+            business_name = row.get(business_column)
+            status = row.get(status_column, 'not_researched')
+            
+            if pd.notna(business_name) and str(business_name).strip():
+                # Only mark as researched if we have some research data
+                if status in ['completed', 'manual_required', 'billing_error'] or \
+                   any(pd.notna(row.get(col)) and str(row.get(col)).strip() not in ['Not found', 'Research required', ''] 
+                       for col in ['phone', 'email', 'website', 'address']):
+                    self.mark_as_researched(business_name, status)
+    
+    def get_research_status_summary(self):
+        """Get summary of research status cache"""
+        if not self.research_status_cache:
+            return {
+                'total_cached': 0,
+                'completed': 0,
+                'manual_required': 0,
+                'billing_error': 0,
+                'not_researched': 0
+            }
+        
+        status_counts = {}
+        for entry in self.research_status_cache.values():
+            status = entry['status']
+            status_counts[status] = status_counts.get(status, 0) + 1
+        
+        return {
+            'total_cached': len(self.research_status_cache),
+            'completed': status_counts.get('completed', 0),
+            'manual_required': status_counts.get('manual_required', 0),
+            'billing_error': status_counts.get('billing_error', 0),
+            'not_researched': status_counts.get('not_researched', 0)
+        }
+    
+    def clear_research_cache(self):
+        """Clear the research status cache"""
+        self.research_status_cache = {}
     
     async def send_curated_emails(self, selected_businesses=None, template_name='business_intro', 
                                 email_variables=None, delay_seconds=2.0, 
@@ -251,8 +321,16 @@ class StreamlitBusinessResearcher:
         
         return True, "All APIs working"
     
-    async def research_business_direct(self, business_name, expected_city=None, expected_address=None):
-        """Research business using comprehensive multi-layer strategy"""
+    async def research_business_direct(self, business_name, expected_city=None, expected_address=None, force_research=False):
+        """Research business using comprehensive multi-layer strategy with duplicate prevention"""
+        
+        # Check if already researched (unless forced)
+        if not force_research and self.is_already_researched(business_name):
+            existing_status = self.get_research_status(business_name)
+            print(f"⏩ Skipping {business_name} - already researched (status: {existing_status['status']}) at {existing_status.get('timestamp', 'unknown time')}")
+            
+            # Create a result from cache instead of researching again
+            return self.create_cached_result(business_name, existing_status)
         
         print(f"🔍 Researching: {business_name}")
         
@@ -277,12 +355,17 @@ class StreamlitBusinessResearcher:
             
             if not all_search_results:
                 print(f"❌ No search results found for {business_name}")
-                return self.create_manual_fallback(business_name)
+                result = self.create_manual_fallback(business_name)
+                self.mark_as_researched(business_name, 'manual_required')
+                return result
             
             # Step 2: Extract contact info using Groq AI with comprehensive data and relevance verification
             contact_info = await self.extract_contacts_with_groq(
                 business_name, all_search_results, expected_city, expected_address
             )
+            
+            # Mark as researched based on result status
+            self.mark_as_researched(business_name, contact_info.get('status', 'completed'))
             
             return contact_info
             
@@ -290,10 +373,53 @@ class StreamlitBusinessResearcher:
             error_str = str(e).lower()
             if "billing" in error_str or "quota" in error_str or "insufficient" in error_str:
                 print(f"💳 API Billing Error for {business_name}: {e}")
-                return self.create_billing_error_result(business_name)
+                result = self.create_billing_error_result(business_name)
+                self.mark_as_researched(business_name, 'billing_error')
+                return result
             else:
                 print(f"❌ Error researching {business_name}: {e}")
-                return self.create_manual_fallback(business_name)
+                result = self.create_manual_fallback(business_name)
+                self.mark_as_researched(business_name, 'manual_required')
+                return result
+    
+    def create_cached_result(self, business_name, cache_entry):
+        """Create a result object from cached research status"""
+        cached_info = f"""
+        BUSINESS_NAME: {business_name}
+        INDUSTRY_RELEVANT: CACHED
+        LOCATION_RELEVANT: CACHED
+        PHONE: Previously researched
+        EMAIL: Previously researched
+        WEBSITE: Previously researched
+        ADDRESS: Previously researched
+        CITY: Previously researched
+        REGISTRATION_NUMBER: Previously researched
+        LICENSE_DETAILS: Previously researched
+        DIRECTORS: Previously researched
+        DESCRIPTION: Business previously researched on {cache_entry.get('timestamp', 'unknown date')}
+        GOVERNMENT_VERIFIED: CACHED
+        CONFIDENCE: 10
+        RELEVANCE_NOTES: Business was previously researched with status: {cache_entry['status']}
+        """
+        
+        result = {
+            'business_name': business_name,
+            'extracted_info': cached_info,
+            'raw_search_results': [],
+            'government_sources_found': 0,
+            'industry_sources_found': 0,
+            'total_sources': 0,
+            'research_date': datetime.now().isoformat(),
+            'method': 'Cached (Previously Researched)',
+            'status': 'cached',
+            'original_research_date': cache_entry.get('timestamp'),
+            'original_status': cache_entry['status']
+        }
+        
+        # Don't add to results list for cached entries to avoid duplicates
+        print(f"   📋 Cached result retrieved for {business_name}")
+        
+        return result
     
     def search_general_business_info(self, business_name):
         """Search for general wood/timber business information"""
@@ -774,8 +900,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         
         return result
     
-    async def research_from_dataframe(self, df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=None, enable_justdial=False):
-        """Research businesses from DataFrame with enhanced comprehensive search and city/address verification"""
+    async def research_from_dataframe(self, df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=None, enable_justdial=False, skip_researched=True):
+        """Research businesses from DataFrame with enhanced comprehensive search and city/address verification
+        Now includes research status tracking to avoid duplicate research"""
         
         # Extract business names from the specified column
         if consignee_column not in df.columns:
@@ -797,6 +924,13 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         
         print(f"📍 Using columns - Business: {consignee_column}, City: {city_column}, Address: {address_column}")
         print(f"🎯 Enhanced Strategy: General + Government + Industry sources")
+        
+        # Load existing research cache if we have a research status column
+        if 'research_status' in df.columns:
+            print("🔄 Loading existing research cache...")
+            self.load_research_cache_from_dataframe(df, consignee_column, 'research_status')
+            cache_summary = self.get_research_status_summary()
+            print(f"📊 Loaded cache: {cache_summary['total_cached']} businesses, {cache_summary['completed']} completed")
         
         # Get unique business names with their city/address info
         business_data = []
@@ -822,6 +956,14 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         if not business_list:
             raise ValueError(f"No business names found in column '{consignee_column}'")
         
+        # Filter out already researched businesses if skip_researched is True
+        if skip_researched:
+            original_count = len(business_list)
+            business_list = [b for b in business_list if not self.is_already_researched(b['name'])]
+            skipped_count = original_count - len(business_list)
+            if skipped_count > 0:
+                print(f"⏩ Skipping {skipped_count} already researched businesses")
+        
         # Limit number of businesses if specified
         if max_businesses and max_businesses < len(business_list):
             business_list = business_list[:max_businesses]
@@ -829,6 +971,20 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         
         total_businesses = len(business_list)
         print(f"📋 Found {total_businesses} unique businesses to research")
+        
+        if total_businesses == 0:
+            print("✅ All businesses have already been researched!")
+            return {
+                'total_processed': 0,
+                'successful': 0,
+                'government_verified': 0,
+                'manual_required': 0,
+                'billing_errors': 0,
+                'skipped_duplicate': self.get_research_status_summary()['total_cached'],
+                'success_rate': 100,
+                'government_verification_rate': 0
+            }
+        
         print(f"⚠️ Note: Enhanced search takes longer (~45-60 seconds per business)")
         
         # Research each business with comprehensive verification
@@ -850,9 +1006,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
                 print(f"🏠 Expected Address: {expected_address}")
             
             try:
-                # Enhanced research with comprehensive sources
+                # Enhanced research with comprehensive sources and duplicate prevention
                 result = await self.research_business_direct(
-                    business_name, expected_city, expected_address
+                    business_name, expected_city, expected_address, force_research=False
                 )
                 
                 if result['status'] == 'success':
@@ -865,6 +1021,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
                     billing_errors += 1
                     print("💳 Stopping research due to billing error.")
                     break
+                elif result['status'] == 'cached':
+                    # Don't count cached results in the processing stats
+                    continue
                 
                 # Longer delay for comprehensive search
                 await asyncio.sleep(4)
@@ -879,6 +1038,9 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
                     print(f"❌ Unexpected error: {e}")
                     manual_required += 1
         
+        # Get cache summary for skipped businesses
+        cache_summary = self.get_research_status_summary()
+        
         # Return enhanced summary
         summary = {
             'total_processed': len(self.results),
@@ -886,6 +1048,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
             'government_verified': government_verified,
             'manual_required': manual_required,
             'billing_errors': billing_errors,
+            'skipped_duplicate': cache_summary['total_cached'],
             'success_rate': successful/len(self.results)*100 if self.results else 0,
             'government_verification_rate': government_verified/len(self.results)*100 if self.results else 0
         }
@@ -893,7 +1056,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         return summary
     
     def get_results_dataframe(self):
-        """Convert enhanced results to DataFrame"""
+        """Convert enhanced results to DataFrame with research status tracking"""
         
         if not self.results:
             return pd.DataFrame()
@@ -903,10 +1066,18 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
             csv_row = self.parse_extracted_info_to_csv(result)
             csv_data.append(csv_row)
         
-        return pd.DataFrame(csv_data)
+        df = pd.DataFrame(csv_data)
+        
+        # Add research_status column based on the status
+        if 'status' in df.columns:
+            df['research_status'] = df['status']
+        else:
+            df['research_status'] = 'completed'
+            
+        return df
     
     def save_csv_results(self, filename=None, filter_info=None):
-        """Save enhanced research results to CSV file"""
+        """Save enhanced research results to CSV file with research status tracking"""
         
         if not filename:
             if filter_info and filter_info.get('filter_summary'):
@@ -927,7 +1098,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         return filename, results_df
     
     def parse_extracted_info_to_csv(self, result):
-        """Parse enhanced extracted info text into CSV fields"""
+        """Parse enhanced extracted info text into CSV fields with research status"""
         info = result['extracted_info']
         business_name = result['business_name']
         
@@ -947,14 +1118,16 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
             'government_verified': self.extract_field_value(info, 'GOVERNMENT_VERIFIED:'),
             'confidence': self.extract_field_value(info, 'CONFIDENCE:'),
             'relevance_notes': self.extract_field_value(info, 'RELEVANCE_NOTES:') or self.extract_field_value(info, 'VERIFICATION_NOTES:'),
-            'status': result['status'],
+            'research_status': result['status'],  # Track research status
             'govt_sources_found': result.get('government_sources_found', 0),
             'industry_sources_found': result.get('industry_sources_found', 0),
             'total_sources': result.get('total_sources', 0),
             'research_date': result['research_date'],
             'method': result['method'],
             'expected_city': result.get('expected_city', ''),
-            'expected_address': result.get('expected_address', '')
+            'expected_address': result.get('expected_address', ''),
+            'original_research_date': result.get('original_research_date', ''),  # For cached results
+            'original_status': result.get('original_status', '')  # For cached results
         }
         
         return csv_row
@@ -971,9 +1144,10 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         except:
             return ""
 
-async def research_businesses_from_dataframe(df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=10, enable_justdial=False, filter_info=None):
+async def research_businesses_from_dataframe(df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=10, enable_justdial=False, filter_info=None, skip_researched=True):
     """
     Enhanced research of wood/timber businesses from a DataFrame with comprehensive government and industry sources
+    Now includes research status tracking to avoid duplicate research
     
     Args:
         df: pandas DataFrame containing business data
@@ -983,9 +1157,10 @@ async def research_businesses_from_dataframe(df, consignee_column='Consignee Nam
         max_businesses: maximum number of businesses to research (default 10)
         enable_justdial: ignored (kept for compatibility)
         filter_info: dictionary containing filter information for filename generation
+        skip_researched: if True, skip businesses that have already been researched (default True)
     
     Returns:
-        tuple: (results_dataframe, summary_dict, csv_filename)
+        tuple: (results_dataframe, summary_dict, csv_filename, researcher)
     """
     
     try:
@@ -996,14 +1171,15 @@ async def research_businesses_from_dataframe(df, consignee_column='Consignee Nam
         if not api_ok:
             raise Exception(f"API Test Failed: {api_message}")
         
-        # Enhanced research with comprehensive sources and verification
+        # Enhanced research with comprehensive sources, verification, and duplicate prevention
         summary = await researcher.research_from_dataframe(
             df, 
             consignee_column=consignee_column,
             city_column=city_column,
             address_column=address_column,
             max_businesses=max_businesses,
-            enable_justdial=False  # Always disable enhanced features
+            enable_justdial=False,  # Always disable enhanced features
+            skip_researched=skip_researched
         )
         
         # Get enhanced results
