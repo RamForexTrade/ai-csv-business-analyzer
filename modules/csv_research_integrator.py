@@ -70,36 +70,17 @@ class CSVResearchIntegrator:
         return integrated_df
     
     def _exact_matching(self, integrated_df):
-        """Perform exact string matching with detailed debugging"""
+        """Perform exact string matching with case-insensitive comparison"""
         matched_count = 0
         total_original = len(integrated_df)
         
-        # Debug information
-        st.write(f"🔍 **Debug Info - Exact Matching:**")
-        st.write(f"- Original data rows: {total_original}")
-        st.write(f"- Research results rows: {len(self.research_results_df)}")
-        st.write(f"- Business name column: '{self.business_name_column}'")
-        
-        # Show sample data for debugging
-        if not integrated_df.empty and self.business_name_column in integrated_df.columns:
-            sample_original = integrated_df[self.business_name_column].dropna().head(3).tolist()
-            st.write(f"- Sample original names: {sample_original}")
-        
-        if not self.research_results_df.empty and 'business_name' in self.research_results_df.columns:
-            sample_research = self.research_results_df['business_name'].dropna().head(3).tolist()
-            st.write(f"- Sample research names: {sample_research}")
-        
         # Create lookup dictionary for faster matching (case-insensitive)
         research_lookup = {}
-        research_lookup_original = {}  # Keep original case names for display
         for idx, row in self.research_results_df.iterrows():
             if pd.notna(row.get('business_name')):
                 clean_name = str(row['business_name']).strip()
                 clean_name_lower = clean_name.lower()  # Use lowercase for matching
                 research_lookup[clean_name_lower] = row
-                research_lookup_original[clean_name_lower] = clean_name
-        
-        st.write(f"- Research lookup dictionary size: {len(research_lookup)}")
         
         # Perform matching (case-insensitive exact matching)
         unmatched_names = []
@@ -113,9 +94,6 @@ class CSVResearchIntegrator:
                     research_data = research_lookup[business_name_lower]
                     self._update_row_with_research(integrated_df, idx, research_data, 1.0)
                     matched_count += 1
-                    if matched_count <= 3:  # Show first few matches for debugging
-                        original_research_name = research_lookup_original[business_name_lower]
-                        st.write(f"  ✅ Matched: '{business_name}' → '{original_research_name}'")
                 else:
                     unmatched_names.append(business_name)
         
@@ -414,7 +392,7 @@ def add_csv_integration_interface():
         # Sync session state data with integrator instance if needed
         if integrator.integrated_df is None and integrated_df is not None:
             integrator.integrated_df = integrated_df.copy()
-            st.info("🔄 **Auto-Integration Detected**: Using results from previous integration.")        
+            st.info("🔄 **Auto-Integration Results Available**: Ready to export integrated data.")        
         
         # Show sample of integrated data
         with st.expander("🔍 View Integrated Data (First 10 rows)", expanded=True):
@@ -456,13 +434,13 @@ def add_csv_integration_interface():
                 )
             except Exception as e:
                 st.error(f"❌ Export failed: {str(e)}")
-                st.info("📝 Using session state data for download...")
+                # Fallback to session state data
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 filename = f"integrated_research_results_{timestamp}.csv"
                 csv_data = integrated_df.to_csv(index=False)
                 
                 st.download_button(
-                    label="📄 Download Full Integrated CSV (Backup)",
+                    label="📄 Download Integrated CSV",
                     data=csv_data,
                     file_name=filename,
                     mime="text/csv",

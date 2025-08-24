@@ -101,7 +101,7 @@ class ProgressTracker:
             "general_search": "📊", 
             "government_search": "🏛️",
             "industry_search": "🌲",
-            "extracting": "🦙",
+            "extracting": "🦹",
             "verifying": "🔍",
             "completed": "✅",
             "failed": "❌",
@@ -949,24 +949,10 @@ def auto_integrate_research_results():
             st.error("❌ Business column not identified")
             return False
         
-        # Show integration progress with debugging info
+        # Show integration progress
         with st.spinner("🔄 Auto-integrating research results with exact matching..."):
             # Initialize integrator
             integrator = CSVResearchIntegrator()
-            
-            # Debug: Show data before integration
-            st.write("🔍 **Pre-Integration Debug Info:**")
-            st.write(f"- Original CSV rows: {len(st.session_state.uploaded_df)}")
-            st.write(f"- Research results rows: {len(st.session_state.research_results)}")
-            st.write(f"- Business column: '{st.session_state.selected_business_column}'")
-            
-            # Show sample research results structure
-            st.write("- Research results columns:", list(st.session_state.research_results.columns))
-            if len(st.session_state.research_results) > 0:
-                st.write("- Sample research result:")
-                sample_result = st.session_state.research_results.iloc[0].to_dict()
-                for key, value in list(sample_result.items())[:5]:  # Show first 5 fields
-                    st.write(f"  - {key}: {value}")
             
             # Check if business column exists in original data
             if st.session_state.selected_business_column not in st.session_state.uploaded_df.columns:
@@ -1006,9 +992,6 @@ def auto_integrate_research_results():
         return False
     except Exception as e:
         st.error(f"❌ Auto-integration failed: {str(e)}")
-        # Show more detailed error for debugging
-        with st.expander("Error Details"):
-            st.code(str(e))
         return False
 
 def get_integration_summary(integrated_df):
