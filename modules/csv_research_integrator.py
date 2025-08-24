@@ -70,21 +70,67 @@ class CSVResearchIntegrator:
         return integrated_df
     
     def _exact_matching(self, integrated_df):
-        """Perform exact string matching"""
+        """Perform exact string matching with detailed debugging"""
         matched_count = 0
-        for idx, row in integrated_df.iterrows():
-            business_name = str(row[self.business_name_column]).strip()
-            
-            # Find exact match in research results
-            research_match = self.research_results_df[
-                self.research_results_df['business_name'].str.strip() == business_name
-            ]
-            
-            if not research_match.empty:
-                self._update_row_with_research(integrated_df, idx, research_match.iloc[0], 1.0)
-                matched_count += 1
+        total_original = len(integrated_df)
         
-        st.info(f"✅ Exact matching completed: {matched_count} businesses matched")
+        # Debug information
+        st.write(f"🔍 **Debug Info - Exact Matching:**")
+        st.write(f"- Original data rows: {total_original}")
+        st.write(f"- Research results rows: {len(self.research_results_df)}")
+        st.write(f"- Business name column: '{self.business_name_column}'")
+        
+        # Show sample data for debugging
+        if not integrated_df.empty and self.business_name_column in integrated_df.columns:
+            sample_original = integrated_df[self.business_name_column].dropna().head(3).tolist()
+            st.write(f"- Sample original names: {sample_original}")
+        
+        if not self.research_results_df.empty and 'business_name' in self.research_results_df.columns:
+            sample_research = self.research_results_df['business_name'].dropna().head(3).tolist()
+            st.write(f"- Sample research names: {sample_research}")
+        
+        # Create lookup dictionary for faster matching (case-insensitive)
+        research_lookup = {}
+        research_lookup_original = {}  # Keep original case names for display
+        for idx, row in self.research_results_df.iterrows():
+            if pd.notna(row.get('business_name')):
+                clean_name = str(row['business_name']).strip()
+                clean_name_lower = clean_name.lower()  # Use lowercase for matching
+                research_lookup[clean_name_lower] = row
+                research_lookup_original[clean_name_lower] = clean_name
+        
+        st.write(f"- Research lookup dictionary size: {len(research_lookup)}")
+        
+        # Perform matching (case-insensitive exact matching)
+        unmatched_names = []
+        for idx, row in integrated_df.iterrows():
+            if pd.notna(row.get(self.business_name_column)):
+                business_name = str(row[self.business_name_column]).strip()
+                business_name_lower = business_name.lower()  # Compare in lowercase
+                
+                # Try exact match (case-insensitive)
+                if business_name_lower in research_lookup:
+                    research_data = research_lookup[business_name_lower]
+                    self._update_row_with_research(integrated_df, idx, research_data, 1.0)
+                    matched_count += 1
+                    if matched_count <= 3:  # Show first few matches for debugging
+                        original_research_name = research_lookup_original[business_name_lower]
+                        st.write(f"  ✅ Matched: '{business_name}' → '{original_research_name}'")
+                else:
+                    unmatched_names.append(business_name)
+        
+        # Show matching results
+        st.success(f"✅ **Exact matching completed: {matched_count}/{total_original} businesses matched**")
+        
+        if unmatched_names:
+            st.warning(f"⚠️ **{len(unmatched_names)} businesses not matched**")
+            with st.expander("View unmatched business names"):
+                for name in unmatched_names[:10]:  # Show first 10
+                    st.write(f"- {name}")
+                if len(unmatched_names) > 10:
+                    st.write(f"... and {len(unmatched_names) - 10} more")
+        
+        return matched_count
     
     def _fuzzy_matching(self, integrated_df, threshold=0.8):
         """Perform fuzzy string matching using similarity scores"""
@@ -154,24 +200,32 @@ class CSVResearchIntegrator:
             st.success(f"✅ Manual matching completed: {matched_count} businesses matched")
     
     def _update_row_with_research(self, df, row_idx, research_data, confidence):
-        """Update a specific row with research data"""
-        mapping = {
-            'research_phone': research_data.get('phone', 'Not found'),
-            'research_email': research_data.get('email', 'Not found'),
-            'research_website': research_data.get('website', 'Not found'),
-            'research_address': research_data.get('address', 'Not found'),
-            'research_city': research_data.get('city', 'Not found'),
-            'research_description': research_data.get('description', 'Not found'),
-            'research_registration_number': research_data.get('registration_number', 'Not found'),
-            'research_government_verified': research_data.get('government_verified', 'NO'),
-            'research_confidence': research_data.get('confidence', 5),
-            'research_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-            'research_status': research_data.get('status', 'completed'),
-            'research_match_confidence': f"{confidence:.2f}"
-        }
-        
-        for col, value in mapping.items():
-            df.at[row_idx, col] = value
+        """Update a specific row with research data with better error handling"""
+        try:
+            mapping = {
+                'research_phone': research_data.get('phone', 'Not found'),
+                'research_email': research_data.get('email', 'Not found'),
+                'research_website': research_data.get('website', 'Not found'),
+                'research_address': research_data.get('address', 'Not found'),
+                'research_city': research_data.get('city', 'Not found'),
+                'research_description': research_data.get('description', 'Not found'),
+                'research_registration_number': research_data.get('registration_number', 'Not found'),
+                'research_government_verified': research_data.get('government_verified', 'NO'),
+                'research_confidence': research_data.get('confidence', 5),
+                'research_date': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+                'research_status': 'completed',  # Mark as completed since we found a match
+                'research_match_confidence': f"{confidence:.2f}"
+            }
+            
+            for col, value in mapping.items():
+                if col in df.columns:  # Only update if column exists
+                    df.at[row_idx, col] = value
+                    
+        except Exception as e:
+            st.warning(f"Error updating row {row_idx}: {str(e)}")
+            # At minimum, mark as researched even if data update fails
+            if 'research_status' in df.columns:
+                df.at[row_idx, 'research_status'] = 'completed'
     
     def export_integrated_csv(self, filename=None):
         """Export the integrated CSV file"""

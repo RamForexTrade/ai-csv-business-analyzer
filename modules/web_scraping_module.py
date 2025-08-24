@@ -930,7 +930,7 @@ def perform_web_scraping(filtered_df):
     create_editable_results_interface()
 
 def auto_integrate_research_results():
-    """Automatically integrate research results with original CSV and store in session state"""
+    """Automatically integrate research results with original CSV using exact matching"""
     
     try:
         # Import CSV integration functionality
@@ -949,10 +949,38 @@ def auto_integrate_research_results():
             st.error("❌ Business column not identified")
             return False
         
-        # Show integration progress
-        with st.spinner("🔄 Auto-integrating research results..."):
+        # Show integration progress with debugging info
+        with st.spinner("🔄 Auto-integrating research results with exact matching..."):
             # Initialize integrator
             integrator = CSVResearchIntegrator()
+            
+            # Debug: Show data before integration
+            st.write("🔍 **Pre-Integration Debug Info:**")
+            st.write(f"- Original CSV rows: {len(st.session_state.uploaded_df)}")
+            st.write(f"- Research results rows: {len(st.session_state.research_results)}")
+            st.write(f"- Business column: '{st.session_state.selected_business_column}'")
+            
+            # Show sample research results structure
+            st.write("- Research results columns:", list(st.session_state.research_results.columns))
+            if len(st.session_state.research_results) > 0:
+                st.write("- Sample research result:")
+                sample_result = st.session_state.research_results.iloc[0].to_dict()
+                for key, value in list(sample_result.items())[:5]:  # Show first 5 fields
+                    st.write(f"  - {key}: {value}")
+            
+            # Check if business column exists in original data
+            if st.session_state.selected_business_column not in st.session_state.uploaded_df.columns:
+                available_cols = list(st.session_state.uploaded_df.columns)
+                st.error(f"❌ Business column '{st.session_state.selected_business_column}' not found in original data.")
+                st.write(f"Available columns: {available_cols}")
+                return False
+            
+            # Check if business_name column exists in research results
+            if 'business_name' not in st.session_state.research_results.columns:
+                available_cols = list(st.session_state.research_results.columns)
+                st.error(f"❌ 'business_name' column not found in research results.")
+                st.write(f"Available research columns: {available_cols}")
+                return False
             
             # Set original data and research results
             integrator.set_original_data(
@@ -961,10 +989,10 @@ def auto_integrate_research_results():
             )
             integrator.set_research_results(st.session_state.research_results)
             
-            # Perform integration with fuzzy matching
+            # Perform integration with EXACT matching for consignee names
             integrated_df = integrator.integrate_research_results(
-                matching_strategy='fuzzy',
-                confidence_threshold=0.8
+                matching_strategy='exact',  # Changed from 'fuzzy' to 'exact'
+                confidence_threshold=1.0    # 100% confidence for exact match
             )
             
             # Store integrated results
@@ -978,6 +1006,9 @@ def auto_integrate_research_results():
         return False
     except Exception as e:
         st.error(f"❌ Auto-integration failed: {str(e)}")
+        # Show more detailed error for debugging
+        with st.expander("Error Details"):
+            st.code(str(e))
         return False
 
 def get_integration_summary(integrated_df):
