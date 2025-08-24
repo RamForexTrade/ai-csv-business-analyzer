@@ -1,0 +1,1 @@
+# Comprehensive diagnostic and fix script for email template issues

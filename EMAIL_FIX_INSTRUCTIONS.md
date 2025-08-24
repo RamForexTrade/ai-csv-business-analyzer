@@ -1,0 +1,1 @@
+# Detailed instructions for fixing empty label warnings and email placeholders
