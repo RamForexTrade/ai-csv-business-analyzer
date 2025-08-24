@@ -1,0 +1,1 @@
+# Script to demonstrate and test the email curation fix
