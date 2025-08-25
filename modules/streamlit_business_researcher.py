@@ -4,7 +4,7 @@ Now includes Research Status Tracking to avoid duplicate research
 Includes specific searches for government business databases and official registrations
 Focused on teak, wood, timber, lumber businesses with city/address verification
 Integrated with Business Email Module for curated outreach
-OPTIMIZED: Skip Layer 2 & 3 research when status is "completed"
+FIXED: Cache loading workflow - prevents duplicate research for completed businesses
 """
 
 import asyncio
@@ -906,8 +906,25 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
     
     async def research_from_dataframe(self, df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=None, enable_justdial=False, skip_researched=True):
         """Research businesses from DataFrame with enhanced comprehensive search and city/address verification
-        Now includes research status tracking to avoid duplicate research
-        OPTIMIZED: Skip businesses with 'completed' status entirely unless forced"""
+        CRITICAL FIX: Cache loading moved to beginning to prevent duplicate research for completed businesses"""
+        
+        # CRITICAL FIX: Load existing research cache FIRST before any other processing
+        if 'research_status' in df.columns:
+            print("🔄 FIRST: Loading existing research cache...")
+            self.load_research_cache_from_dataframe(df, consignee_column, 'research_status')
+            cache_summary = self.get_research_status_summary()
+            print(f"📊 Cache loaded: {cache_summary['total_cached']} businesses, {cache_summary['completed']} completed")
+            print(f"🛡️ OPTIMIZATION: Will skip {cache_summary['completed']} completed businesses")
+            
+            # DEBUG: Show some examples of what was loaded
+            if self.research_status_cache:
+                print("🔍 DEBUG: Sample cached businesses:")
+                sample_count = 0
+                for normalized_name, cache_entry in list(self.research_status_cache.items())[:3]:
+                    print(f"   - {cache_entry['business_name']} -> status: {cache_entry['status']}")
+                    sample_count += 1
+                if len(self.research_status_cache) > 3:
+                    print(f"   ... and {len(self.research_status_cache) - 3} more businesses in cache")
         
         # Extract business names from the specified column
         if consignee_column not in df.columns:
@@ -930,13 +947,6 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         print(f"📍 Using columns - Business: {consignee_column}, City: {city_column}, Address: {address_column}")
         print(f"🎯 Enhanced Strategy: General + Government + Industry sources")
         print(f"⚡ OPTIMIZATION: Skipping businesses with 'completed' research status")
-        
-        # Load existing research cache if we have a research status column
-        if 'research_status' in df.columns:
-            print("🔄 Loading existing research cache...")
-            self.load_research_cache_from_dataframe(df, consignee_column, 'research_status')
-            cache_summary = self.get_research_status_summary()
-            print(f"📊 Loaded cache: {cache_summary['total_cached']} businesses, {cache_summary['completed']} completed")
         
         # Get unique business names with their city/address info
         business_data = []
@@ -962,14 +972,35 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         if not business_list:
             raise ValueError(f"No business names found in column '{consignee_column}'")
         
-        # Filter out already researched businesses if skip_researched is True
+        # CRITICAL FIX: Filter out businesses with 'completed' status only
         if skip_researched:
             original_count = len(business_list)
-            business_list = [b for b in business_list if not self.is_already_researched(b['name']) or 
-                           self.get_research_status(b['name'])['status'] != 'completed']
-            skipped_count = original_count - len(business_list)
-            if skipped_count > 0:
-                print(f"⏩ Skipping {skipped_count} already completed businesses (research_status='completed')")
+            
+            # Filter out businesses with 'completed' status specifically
+            filtered_businesses = []
+            completed_skipped = []
+            
+            for business in business_list:
+                business_name = business['name']
+                if self.is_already_researched(business_name):
+                    status = self.get_research_status(business_name)['status']
+                    if status == 'completed':
+                        completed_skipped.append(business_name)
+                        print(f"⏩ SKIPPING: {business_name} (status: {status})")
+                    else:
+                        filtered_businesses.append(business)
+                        print(f"🔄 Will re-research: {business_name} (status: {status})")
+                else:
+                    filtered_businesses.append(business)
+            
+            business_list = filtered_businesses
+            
+            if completed_skipped:
+                print(f"⚡ OPTIMIZATION: Skipped {len(completed_skipped)} completed businesses:")
+                for name in completed_skipped[:5]:  # Show first 5
+                    print(f"   - {name}")
+                if len(completed_skipped) > 5:
+                    print(f"   ... and {len(completed_skipped) - 5} more")
         
         # Limit number of businesses if specified
         if max_businesses and max_businesses < len(business_list):
@@ -980,14 +1011,14 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         print(f"📋 Found {total_businesses} unique businesses to research")
         
         if total_businesses == 0:
-            print("✅ All businesses have already been researched with 'completed' status!")
+            print("✅ All businesses have 'completed' research status - no new research needed!")
             return {
                 'total_processed': 0,
                 'successful': 0,
                 'government_verified': 0,
                 'manual_required': 0,
                 'billing_errors': 0,
-                'skipped_duplicate': self.get_research_status_summary()['total_cached'],
+                'skipped_duplicate': len(completed_skipped) if 'completed_skipped' in locals() else 0,
                 'success_rate': 100,
                 'government_verification_rate': 0
             }
@@ -1154,8 +1185,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
 async def research_businesses_from_dataframe(df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=10, enable_justdial=False, filter_info=None, skip_researched=True):
     """
     Enhanced research of wood/timber businesses from a DataFrame with comprehensive government and industry sources
-    Now includes research status tracking to avoid duplicate research
-    OPTIMIZED: Skip businesses with 'completed' status entirely unless forced
+    CRITICAL FIX: Cache loading moved to beginning to prevent duplicate research for completed businesses
     
     Args:
         df: pandas DataFrame containing business data
