@@ -4,6 +4,7 @@ Now includes Research Status Tracking to avoid duplicate research
 Includes specific searches for government business databases and official registrations
 Focused on teak, wood, timber, lumber businesses with city/address verification
 Integrated with Business Email Module for curated outreach
+OPTIMIZED: Skip Layer 2 & 3 research when status is "completed"
 """
 
 import asyncio
@@ -322,15 +323,18 @@ class StreamlitBusinessResearcher:
         return True, "All APIs working"
     
     async def research_business_direct(self, business_name, expected_city=None, expected_address=None, force_research=False):
-        """Research business using comprehensive multi-layer strategy with duplicate prevention"""
+        """Research business using comprehensive multi-layer strategy with duplicate prevention
+        OPTIMIZED: Skip entirely if research_status is 'completed' and not forced"""
         
-        # Check if already researched (unless forced)
+        # Check if already researched with "completed" status (unless forced)
         if not force_research and self.is_already_researched(business_name):
             existing_status = self.get_research_status(business_name)
-            print(f"⏩ Skipping {business_name} - already researched (status: {existing_status['status']}) at {existing_status.get('timestamp', 'unknown time')}")
-            
-            # Create a result from cache instead of researching again
-            return self.create_cached_result(business_name, existing_status)
+            if existing_status['status'] == 'completed':
+                print(f"⏩ Skipping {business_name} - already completed research (status: {existing_status['status']}) at {existing_status.get('timestamp', 'unknown time')}")
+                # Create a result from cache instead of researching again
+                return self.create_cached_result(business_name, existing_status)
+            else:
+                print(f"🔄 Re-researching {business_name} - previous status: {existing_status['status']} (not completed)")
         
         print(f"🔍 Researching: {business_name}")
         
@@ -902,7 +906,8 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
     
     async def research_from_dataframe(self, df, consignee_column='Consignee Name', city_column=None, address_column=None, max_businesses=None, enable_justdial=False, skip_researched=True):
         """Research businesses from DataFrame with enhanced comprehensive search and city/address verification
-        Now includes research status tracking to avoid duplicate research"""
+        Now includes research status tracking to avoid duplicate research
+        OPTIMIZED: Skip businesses with 'completed' status entirely unless forced"""
         
         # Extract business names from the specified column
         if consignee_column not in df.columns:
@@ -924,6 +929,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         
         print(f"📍 Using columns - Business: {consignee_column}, City: {city_column}, Address: {address_column}")
         print(f"🎯 Enhanced Strategy: General + Government + Industry sources")
+        print(f"⚡ OPTIMIZATION: Skipping businesses with 'completed' research status")
         
         # Load existing research cache if we have a research status column
         if 'research_status' in df.columns:
@@ -959,10 +965,11 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         # Filter out already researched businesses if skip_researched is True
         if skip_researched:
             original_count = len(business_list)
-            business_list = [b for b in business_list if not self.is_already_researched(b['name'])]
+            business_list = [b for b in business_list if not self.is_already_researched(b['name']) or 
+                           self.get_research_status(b['name'])['status'] != 'completed']
             skipped_count = original_count - len(business_list)
             if skipped_count > 0:
-                print(f"⏩ Skipping {skipped_count} already researched businesses")
+                print(f"⏩ Skipping {skipped_count} already completed businesses (research_status='completed')")
         
         # Limit number of businesses if specified
         if max_businesses and max_businesses < len(business_list):
@@ -973,7 +980,7 @@ CRITICAL: Be more decisive in your YES/NO determinations after this second compr
         print(f"📋 Found {total_businesses} unique businesses to research")
         
         if total_businesses == 0:
-            print("✅ All businesses have already been researched!")
+            print("✅ All businesses have already been researched with 'completed' status!")
             return {
                 'total_processed': 0,
                 'successful': 0,
@@ -1148,6 +1155,7 @@ async def research_businesses_from_dataframe(df, consignee_column='Consignee Nam
     """
     Enhanced research of wood/timber businesses from a DataFrame with comprehensive government and industry sources
     Now includes research status tracking to avoid duplicate research
+    OPTIMIZED: Skip businesses with 'completed' status entirely unless forced
     
     Args:
         df: pandas DataFrame containing business data
